@@ -72,34 +72,6 @@ end
 
 
 """
-    boundary_propagator_timeseries(Gp, f_atm, t_vec; C0=nothing, t0=nothing)
-    
-Calculate convolution of a boundary propagator with surface source.
-"""
-function boundary_propagator_timeseries(
-    Gp::Function, 
-    f_atm::Union{<:Function, <:AbstractInterpolation}, 
-    t_vec::AbstractVector{<:Real};
-    C0::Union{Nothing, <:Real}=nothing,
-    t0::Union{Nothing, <:Real}=nothing
-)
-    result = zeros(length(t_vec))
-    
-    for (i, t) in enumerate(t_vec)
-        # Directly compute convolution integral for each time point
-        integral, _ = quadgk(tp -> Gp(t - tp) * f_atm(tp), 0, t)
-        result[i] = integral
-        
-        # Add initial concentration effect if provided
-        if C0 !== nothing && t0 !== nothing
-            result[i] += C0 * Gp(t - t0)
-        end
-    end
-    
-    return result
-end
-
-"""
     boundary_propagator_timeseries(Gp_arr, f_atm, t_vec)
     
 Calculate convolutions for matrix of propagators with vector of sources.
@@ -170,46 +142,6 @@ function boundary_propagator_timeseries(
     else
         return  result .+ C0
     end
-end
-
-"""
-    boundary_propagator_timeseries(Gp_arr, f_atm, t_vec)
-    
-Calculate convolutions for matrix of propagators with vector of sources.
-
-Returns 3D array with dimensions [propagator_row, source_column, time].
-"""
-function boundary_propagator_timeseries(
-    Gp_arr::AbstractMatrix{<:Function}, 
-    f_atm::AbstractVector{Union{<:Function, <:AbstractInterpolation}}, 
-    t_vec::AbstractVector{<:Real}
-)
-    # Get dimensions
-    N, M = size(Gp_arr)
-    Nt = length(t_vec)
-    
-    # Check dimensions match
-    if M != length(f_atm)
-        error("Dimension mismatch: Gp_arr has $M columns but f_atm has $(length(f_atm)) elements")
-    end
-    
-    # Check dimensions match
-    if N != length(f_atm)
-        error("Dimension mismatch: Gp_arr has $M columns but f_atm has $(length(f_atm)) elements")
-    end
-    
-        
-    # Initialize result array
-    results = zeros(N, M, Nt)
-    
-    # Calculate convolutions
-    for i in 1:N, j in 1:M
-        results[i, j, :] .= boundary_propagator_timeseries(Gp_arr[i, j], 
-                                                           f_atm[j], 
-                                                           t_vec)
-    end
-
-    return results
 end
 
 """
