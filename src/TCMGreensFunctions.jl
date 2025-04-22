@@ -26,6 +26,8 @@ export # re-export from Distributions
 export # re-export from Distributions
     InverseGaussian, pdf
 
+export BoundaryPropagator, boundary_propagator_timeseries
 include("tracer_inverse_gaussian.jl")
+include("BoundaryPropagator.jl")
 
 end
