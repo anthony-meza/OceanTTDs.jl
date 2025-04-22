@@ -19,56 +19,89 @@ end
 # ╔═╡ 6c4083e2-1f27-11f0-1077-e9a0ae678f2d
 begin 
 	import Pkg
-	Pkg.activate("../")
+	Pkg.activate(".")
+	Pkg.instantiate()
 	using TCMGreensFunctions, Plots, 
-	Distributions, QuadGK, Interpolations, 
+	Distributions, Interpolations, 
 	PlutoUI
+	
 end
 
 # ╔═╡ a9445454-daf5-4183-8aba-cb61e8595d06
 begin
 	# This will let us adjust the base parameters
-	μ_0_slider = @bind μ_0 Slider(0.5:0.5:30, default=15, show_value=true)
-	λ_0_slider = @bind λ_0 Slider(0.5:0.5:20, default=10.0, show_value=true)
-	scaling_slider = @bind age_scaling Slider(10:5:40, default=10.0, show_value=true)
+	Γ_0_slider = @bind Γ_0 Slider(0.5:0.5:30, default=15, show_value=true)
+	Δ_0_slider = @bind Δ_0 Slider(0.5:0.5:20, default=10.0, show_value=true)
+	scaling_slider = @bind λ Slider(200:5:400, default=10.0, show_value=true)
 
 	md"""
-	## Base Parameters
-	
-	Mean (μ₀): $μ_0_slider
-	
-	Width (λ₀): $λ_0_slider
+	## Inverse Gaussian Parameters 
 
-	Depth Scaling: $scaling_slider
+	Given the mean age ($\Gamma$) and width ($\Delta$), the inverse Guassian TTD is 
+	
+	$$\mathcal{G}(τ) = \sqrt{\frac{\Gamma^3}{4 \pi \Delta^2 \tau^3}} \exp\left(-\frac{\Gamma(\tau - \Gamma)^2}{4 \Delta^2 \tau}\right)$$
+
+	Where, 
+
+	$$\Gamma = \int_0^\infty \mathcal{G}(\tau)\tau d\tau$$
+
+	$$2 \Delta^2 = \int_0^\infty \mathcal{G}(\tau)\tau^2 d\tau - \Gamma^2.$$
+
+	Here, we also introduce an additional parameter, $\lambda$, which will 
+	dictate how $\Gamma$ and $\Delta$ change as a function of height. I.e., $\mathbf{\Gamma}(z) = \Gamma_0 \exp(z / \lambda)$ and $\mathbf{\Delta}(z) = \Delta_0 \exp(z / \lambda)$. Using these defitions of $\mathbf{\Gamma}$ and \mathbf{\Delta}, we can explore how different distributions can effect how tracers can propagate into the interior. 
+
+	Mean Age ($\Gamma_0$): $Γ_0_slider [years]
+	
+	Width ($\Delta_0$): $Δ_0_slider
+
+	Depth Scaling ($\lambda$): $scaling_slider
 	"""
 end
 
 
 # ╔═╡ d93d36a6-a0ab-424a-9100-88cb4c5990af
 begin
-	Gp(x, μ, λ) = pdf(InverseGaussian(μ, λ), x)  # Inv. Gauss. Boundary propagator function
+	Gp(x, Γ, Δ) = pdf(InverseGaussian(TracerInverseGaussian(Γ, Δ)), x)  # Inv. Gauss. Boundary propagator function
 
-	depths = [0, 5, 20, 30] #depths of boxes we are modeling 
+	depths = [0, 5, 100, 500] #depths of boxes we are modeling 
 	depth_colors = cgrad(:greens, length(depths), categorical=true)  # Create a categorical gradient with fixed colors
 	
-	μs = exp.(depths ./ age_scaling) .* μ_0 #mean age increases with depth
-	λs = exp.(depths ./ age_scaling) .* λ_0 #width increases with depth
+	Γs = exp.(depths ./ λ) .* Γ_0 #mean age increases with depth
+	Δs = exp.(depths ./ λ) .*Δ_0 #width increases with depth
 
-	Gps = [x -> Gp(x, μ, λ) for (μ, λ) in zip(μs, λs)]
+	Gps = [x -> Gp(x, μ, λ) for (μ, λ) in zip(Γs, Δs)]
 
 end
 
 # ╔═╡ b9d5dccc-16ed-42f5-a1b4-d9600670219f
 begin 
-	x_pdf = collect(0:0.05:50) 
-	p = plot()
-	for i in 1:length(depths)
-	    plot!(p, x_pdf, Gps[i].(x_pdf), 
-	          label="GP $i", 
-	          color = depth_colors[i], 
-	          lw = 4)
-	end
-	p
+    x_pdf = collect(0:0.05:50) 
+    p = plot(layout=@layout [a b{0.3w}])
+	nz = length(depths)
+	
+    for i in 1:nz
+		curr_depth = depths[i]
+        plot!(p[1], x_pdf, Gps[i].(x_pdf), 
+			  label="Box $i\n z=$curr_depth meters", 
+			  color=depth_colors[i], lw=4, 
+			 xlabel = "τ [yrs]", ylabel = "Density [1/yrs]")
+        scatter!(p[2], [i], [curr_depth], 
+				 label="", 
+				 color=depth_colors[i], 
+				 marker=:circle, 
+				 xlabel = "Box #", ylabel = "Box \"Depth\"")
+		if i < nz
+	        plot!(p[2], [i, i+1], [depths[i], depths[i+1]], 
+				  color=depth_colors[i], 
+				  lw=2, label="")
+		end
+    end
+    
+    xlims!(p[1], (0, 50))
+
+	yflip!(p[2], true)
+    xlims!(p[2], (0.5, length(depths)+0.5))
+    p
 end
 
 # ╔═╡ 83c0c2e8-8044-4ca7-95b2-a716afa5ea65
@@ -89,8 +122,10 @@ begin
 	         color = :black, 
 	         linewidth = 3)
 	for i in 1:length(depths)
+		depth = depths[i]
+		gamma = round(Γs[i])
 	    plot!(p1, t, pred_values[i, 1, :], 
-	    label="Ocean Values $i", 
+	    label="Box $i\n z=$depth meters, Γ=$gamma yrs", 
 	    color = depth_colors[i], 
 	    lw = 4)
 	end
@@ -100,6 +135,6 @@ end
 # ╔═╡ Cell order:
 # ╠═6c4083e2-1f27-11f0-1077-e9a0ae678f2d
 # ╟─a9445454-daf5-4183-8aba-cb61e8595d06
-# ╟─b9d5dccc-16ed-42f5-a1b4-d9600670219f
+# ╠═b9d5dccc-16ed-42f5-a1b4-d9600670219f
 # ╠═d93d36a6-a0ab-424a-9100-88cb4c5990af
 # ╠═83c0c2e8-8044-4ca7-95b2-a716afa5ea65
