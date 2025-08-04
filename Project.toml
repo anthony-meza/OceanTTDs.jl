@@ -4,16 +4,22 @@ authors = ["A Meza"]
 version = "1.0.0-DEV"
 
 [deps]
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
+StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
+Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 
 [compat]
+DataFrames = "1.7.0"
 Distributions = "0.25.119"
 Interpolations = "0.15.1"
 LinearAlgebra = "1.11.0"
 QuadGK = "2.11.2"
+StatsPlots = "0.15.7"
+Turing = "0.37.0"
 julia = "1.11"
 
 [extras]
