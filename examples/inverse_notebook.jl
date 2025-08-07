@@ -71,7 +71,9 @@ begin
 	
 	#now create a timeseries based on green's function & forcing functipon
 	t = collect(0:5:500) #define time of integration
-	@. f(x) = sqrt(x)  # forcing function is linear
+	# @. f(x) = sqrt(x)  # forcing function is linear
+	@. f(t::Real) = (t < 0) ? 0.0 : sqrt(t)
+
 	BP = BoundaryPropagator(Gp0, f, t) #setup Boundary Propagator problem
 	pred_values = boundary_propagator_timeseries(BP)[1, 1, :]; 
 	
@@ -126,69 +128,6 @@ begin
 end
 
 # ╔═╡ c16bd826-6abd-4a75-acd3-d92177f7eddb
-
-
-# ╔═╡ 1fe0423b-7a56-4b0e-bc16-a068a1bf3a5e
-begin
-	# === MaxEnt function ===
-	MaxEntFunc(t, p) = exp.(-p[1] .* t .- p[2] .* t.^2 .- p[3] .* log.(t .+ 0.1))
-
-	# === Normalization constant ===
-	function normalize_const_MaxEnt(p; a=0, b=10000, N=200)
-	    simpsons_integral(t -> MaxEntFunc(t, p), a, b, N)
-	end
-
-	# === Distribution (cached Z per call) ===
-	function MaxEntDist(t, p; a=0, b=10000, N=200)
-	    Z = normalize_const_MaxEnt(p; a=a, b=b, N=N)
-	    return MaxEntFunc(t, p) / Z
-	end
-
-	# === Entropy computation ===
-	function EntMeasure(p; a=0, b=10000, N=200)
-	    h = (b - a) / N
-	    t = range(a, stop=b, length=N+1)
-	    Z = normalize_const_MaxEnt(p; a=a, b=b, N=N)
-	    g = MaxEntFunc.(t, Ref(p)) ./ Z
-	    entropy_vals = @. g * log(g + 1e-12)
-	
-	    integrand = x -> entropy_vals[round(Int, (x - a)/h) + 1]
-	    return -simpsons_integral(integrand, a, b, N)
-	end
-
-
-	# === Tracer prediction ===
-	function BP_Estimate2(p::AbstractVector{T}, t) where T
-	    dist_fn = x -> MaxEntDist(x, p)
-	    propagator = BoundaryPropagator(dist_fn, f, t)
-	    ts_iter = boundary_propagator_timeseries(propagator)
-	    return collect(ts_iter[:])
-	end
-
-	# === Objective function ===
-	function J2(u)
-	    misfit = sum(((y_obs .- BP_Estimate2(u, t_obs)) ./ σ).^2)
-	    entropy = EntMeasure(u)
-	    return misfit + 1* entropy
-	end
-
-	# === Optimization ===
-	u02 = [100.0, 100.0, 100]
-	lower2 = -[Inf, Inf, Inf]
-	upper2 = [Inf, Inf, Inf]
-
-	# results2 = optimize(J2, lower2, upper2, u02,					  Fminbox(LBFGS()),  # box‐constrained L-BFGS
-	# 				  Optim.Options(g_tol = 1e-16, f_tol = 1e-16))
-	results2 = bboptimize(
-	  J2, 
-	  u02;
-	  SearchRange  = [(-1e7, 1e7),  # α ∈ [0.1, ∞)
-					  (-1e7, 1e7), 
-					  (-1e7, 1e7)], # β ∈ [0.1, ∞)
-	  NumDimensions = 3,
-	  MaxSteps      = 1000,        # or whatever budget you like)
-	)
-end
 
 
 # ╔═╡ f29eb59f-3ff3-4bb7-80b3-ccd4aaadeecd
@@ -271,12 +210,6 @@ begin
 	
 end
 
-# ╔═╡ aa5af6f8-35fd-48b4-af60-d4bbe1250a38
-begin 
-	p2 = plot(layout=@layout [a b{0.5w}])
-	plot_minimize_results(p2, results2, MaxEntDist, BP_Estimate2)	
-end
-
 # ╔═╡ 015f9e47-3000-4203-aad4-c0e1c8f8f7fa
 begin 
 	p3 = plot(layout=@layout [a b{0.5w}])
@@ -295,8 +228,6 @@ plot( 0.1:50, pdf(gamma_from_IG(20., 46.), 0.1:50))
 # ╠═c16bd826-6abd-4a75-acd3-d92177f7eddb
 # ╠═88b18409-ef68-4196-8ba4-56cda076d0bc
 # ╠═4fdec2ac-af36-4248-bc57-b98ce6842026
-# ╠═1fe0423b-7a56-4b0e-bc16-a068a1bf3a5e
-# ╠═aa5af6f8-35fd-48b4-af60-d4bbe1250a38
 # ╠═f29eb59f-3ff3-4bb7-80b3-ccd4aaadeecd
 # ╠═2133071c-60cb-45be-9500-da2ce603b2b4
 # ╠═015f9e47-3000-4203-aad4-c0e1c8f8f7fa

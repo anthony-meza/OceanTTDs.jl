@@ -8,16 +8,10 @@ using Distributions: @distr_support
 # using Unitful
 # using AlgebraicArrays
 using LinearAlgebra
-# using Downloads
-# using MAT
 using Interpolations
 using QuadGK
-# using CSV
-
+using Integrals
 import Distributions: mean, median, quantile, std, var, cov, cor, shape, params, pdf, InverseGaussian
-# import Base: +, alignment, zeros
-# import DimensionalData: dims
-# import LinearAlgebra: eigen
 
 export TracerInverseGaussian
 export width
@@ -28,9 +22,12 @@ export # re-export from Distributions
 
 export BoundaryPropagator, boundary_propagator_timeseries
 
-export simpsons_integral
+export integrate
 
-include("tracer_inverse_gaussian.jl")
+#order of includes matters here
+include("Integrations.jl") 
 include("BoundaryPropagator.jl")
+include("Convolutions.jl")
+include("tracer_inverse_gaussian.jl")
 
 end
