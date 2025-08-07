@@ -28,6 +28,8 @@ export # re-export from Distributions
 
 export BoundaryPropagator, boundary_propagator_timeseries
 
+export simpsons_integral
+
 include("tracer_inverse_gaussian.jl")
 include("BoundaryPropagator.jl")
 

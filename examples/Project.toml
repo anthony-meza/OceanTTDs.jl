@@ -1,6 +1,10 @@
 [deps]
+BlackBoxOptim = "a134a8b2-14d6-55f6-9291-3336d3ab0209"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+NLsolve = "2774e3e8-f4cf-5e23-947b-6d7e65073b56"
+NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
 Optimization = "7f7a1694-90dd-40f0-9382-eb1efda571ba"
 OptimizationOptimJL = "36348300-93cb-4f02-beb5-3c3902f8871e"

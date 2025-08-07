@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.6
+# v0.20.13
 
 using Markdown
 using InteractiveUtils
@@ -19,6 +19,7 @@ end
 # ╔═╡ 6c4083e2-1f27-11f0-1077-e9a0ae678f2d
 begin 
 	import Pkg
+	using Revise
 	Pkg.activate(".")
 	Pkg.instantiate()
 	using TCMGreensFunctions, Plots, 
@@ -33,6 +34,7 @@ begin
 	Γ_0_slider = @bind Γ_0 Slider(0.5:0.5:30, default=15, show_value=true)
 	Δ_0_slider = @bind Δ_0 Slider(0.5:0.5:20, default=10.0, show_value=true)
 	scaling_slider = @bind λ Slider(200:5:400, default=10.0, show_value=true)
+	simpsons_slider = @bind N_simp Slider(2:4:100, default=40.0, show_value=true)
 
 	md"""
 	## Inverse Gaussian Parameters 
@@ -55,6 +57,8 @@ begin
 	Width ($\Delta_0$): $Δ_0_slider
 
 	Depth Scaling ($\lambda$): $scaling_slider
+
+	Simpsons Integration Bins ($N_{simp}$): $simpsons_slider
 	"""
 end
 
@@ -66,11 +70,39 @@ begin
 	depths = [0, 5, 100, 500] #depths of boxes we are modeling 
 	depth_colors = cgrad(:greens, length(depths), categorical=true)  # Create a categorical gradient with fixed colors
 	
-	Γs = exp.(depths ./ λ) .* Γ_0 #mean age increases with depth
-	Δs = exp.(depths ./ λ) .*Δ_0 #width increases with depth
+	Γs = exp.(depths ./ λ) .* Γ_0 # mean age increases with depth
+	Δs = exp.(depths ./ λ) .*Δ_0 # width increases with depth
 
 	Gps = [x -> Gp(x, μ, λ) for (μ, λ) in zip(Γs, Δs)]
 
+end
+
+# ╔═╡ 2971aa56-fb85-40bd-b19c-884d89a57af8
+begin
+	#define time of integration
+	t = 0:40
+	# Surface flux rate is defined quadratic 
+	@. f(x) = x^2 / 2  
+
+	#setup Boundary Propagator problem
+	BP = BoundaryPropagator(Gps, f, t) 
+
+	#solve for convolution of surface and boundary props
+	pred_values = boundary_propagator_timeseries(BP, N_simpson = N_simp); nothing
+	
+	p1 = plot(t, f.(t), 
+	         label="Atmospheric Source", 
+	         color = :black, 
+	         linewidth = 3)
+	for i in 1:length(depths)
+		depth = depths[i]
+		gamma = round(Γs[i])
+	    plot!(p1, t, pred_values[i, 1, :], 
+	    label="Box $i\n z=$depth meters, Γ=$gamma yrs", 
+	    color = depth_colors[i], 
+	    lw = 4)
+	end
+	p1
 end
 
 # ╔═╡ b9d5dccc-16ed-42f5-a1b4-d9600670219f
@@ -105,36 +137,12 @@ begin
 end
 
 # ╔═╡ 83c0c2e8-8044-4ca7-95b2-a716afa5ea65
-begin
-	#define time of integration
-	t = 1:40
-	# Surface flux rate is defined quadratic 
-	@. f(x) = x^2 / 2  
 
-	#setup Boundary Propagator problem
-	BP = BoundaryPropagator(Gps, f, t) 
-
-	#solve for convolution of surface and boundary props
-	pred_values = boundary_propagator_timeseries(BP); nothing
-	
-	p1 = plot(t, f.(t), 
-	         label="Atmospheric Source", 
-	         color = :black, 
-	         linewidth = 3)
-	for i in 1:length(depths)
-		depth = depths[i]
-		gamma = round(Γs[i])
-	    plot!(p1, t, pred_values[i, 1, :], 
-	    label="Box $i\n z=$depth meters, Γ=$gamma yrs", 
-	    color = depth_colors[i], 
-	    lw = 4)
-	end
-	p1
-end
 
 # ╔═╡ Cell order:
 # ╠═6c4083e2-1f27-11f0-1077-e9a0ae678f2d
 # ╟─a9445454-daf5-4183-8aba-cb61e8595d06
+# ╟─2971aa56-fb85-40bd-b19c-884d89a57af8
 # ╠═b9d5dccc-16ed-42f5-a1b4-d9600670219f
 # ╠═d93d36a6-a0ab-424a-9100-88cb4c5990af
 # ╠═83c0c2e8-8044-4ca7-95b2-a716afa5ea65

@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.6
+# v0.20.13
 
 using Markdown
 using InteractiveUtils
@@ -24,8 +24,8 @@ begin
 	using TCMGreensFunctions, Plots, 
 	Distributions, Interpolations, 
 	PlutoUI, Random
-	using Optim
-	Random.seed!(1234)
+	using Optim, BlackBoxOptim
+	# Random.seed!(1234)
 end
 
 # ╔═╡ a9445454-daf5-4183-8aba-cb61e8595d06
@@ -57,7 +57,7 @@ end
 
 # ╔═╡ b9d5dccc-16ed-42f5-a1b4-d9600670219f
 begin 
-    x_pdf = collect(0:0.05:100) 
+    x_pdf = collect(0.1:0.1:100) 
 
 	#Setup Inverse Gaussian
 	Gp(x, Γ, Δ) = pdf(InverseGaussian(TracerInverseGaussian(Γ, Δ)), x)  # Inv. Gauss. Boundary propagator function
@@ -70,7 +70,7 @@ begin
 	title = "Green's Function", label = nothing, color = "black")
 	
 	#now create a timeseries based on green's function & forcing functipon
-	t = collect(1:500) #define time of integration
+	t = collect(0:5:500) #define time of integration
 	@. f(x) = sqrt(x)  # forcing function is linear
 	BP = BoundaryPropagator(Gp0, f, t) #setup Boundary Propagator problem
 	pred_values = boundary_propagator_timeseries(BP)[1, 1, :]; 
@@ -90,7 +90,7 @@ begin
 	obs_idx = sort(rand(collect(1:length(t)), nobs)); #get random index samples 
 	
 	t_obs = t[obs_idx]; 
-	σ = 2; obs_error = rand(Normal(0, σ), nobs)
+	σ = 0.5; obs_error = rand(Normal(0, σ), nobs)
 	y_obs = pred_values[obs_idx] .+ obs_error; 
 	
 	t_obs = t_obs[y_obs .> 0] #remove erroneous values that cannot be fit
@@ -99,19 +99,154 @@ end
 
 # ╔═╡ 433b827e-e2c4-4e26-91a3-9292936678dc
 begin 
-
-	BP_Estimate(p, t) = boundary_propagator_timeseries(BoundaryPropagator(x -> Gp(x, p[1], p[2]), f, t))[:]
+	GPDist(t, p) = Gp(t, p[1], p[2])
+	function BP_Estimate(p::AbstractVector{T}, t) where T
+	  # build your propagator and surface time series
+	  propagator = BoundaryPropagator(x -> GPDist(x, p), f, t)
 	
-	J(u) = sum(((y_obs .- BP_Estimate(u, t_obs)) / σ).^2) #define a simple objective
-	u0 = [5.0, 5.0]
-	results = optimize(J, [1.0, 1.0], [Inf, Inf], u0, IPNewton())
+	  # extract the time series
+	  ts_iter = boundary_propagator_timeseries(propagator)
+	
+	  # collect it into a Vector{T}
+	  return collect(ts_iter[:])
+	end
+	
+	#objective
+	J(u) = sum(((y_obs .- BP_Estimate(u, t_obs)) ./ σ).^2)
+	
+	# initial guess and simple lower/upper bounds
+	u0 = [10.0, 10.0]
+	lower = [0.1, 0.1]
+	upper = [Inf, Inf]
+
+	results = optimize(J, lower, upper, u0,
+					   Fminbox(LBFGS()),  # box‐constrained L-BFGS
+					  Optim.Options(g_tol = 1e-16, f_tol = 1e-16))
 
 end
 
-# ╔═╡ 88b18409-ef68-4196-8ba4-56cda076d0bc
+# ╔═╡ c16bd826-6abd-4a75-acd3-d92177f7eddb
+
+
+# ╔═╡ 1fe0423b-7a56-4b0e-bc16-a068a1bf3a5e
 begin
-		Γ_opt, Δ_opt = round.(Optim.minimizer(results))
-		p1 = plot(layout=@layout [a b{0.5w}])
+	# === MaxEnt function ===
+	MaxEntFunc(t, p) = exp.(-p[1] .* t .- p[2] .* t.^2 .- p[3] .* log.(t .+ 0.1))
+
+	# === Normalization constant ===
+	function normalize_const_MaxEnt(p; a=0, b=10000, N=200)
+	    simpsons_integral(t -> MaxEntFunc(t, p), a, b, N)
+	end
+
+	# === Distribution (cached Z per call) ===
+	function MaxEntDist(t, p; a=0, b=10000, N=200)
+	    Z = normalize_const_MaxEnt(p; a=a, b=b, N=N)
+	    return MaxEntFunc(t, p) / Z
+	end
+
+	# === Entropy computation ===
+	function EntMeasure(p; a=0, b=10000, N=200)
+	    h = (b - a) / N
+	    t = range(a, stop=b, length=N+1)
+	    Z = normalize_const_MaxEnt(p; a=a, b=b, N=N)
+	    g = MaxEntFunc.(t, Ref(p)) ./ Z
+	    entropy_vals = @. g * log(g + 1e-12)
+	
+	    integrand = x -> entropy_vals[round(Int, (x - a)/h) + 1]
+	    return -simpsons_integral(integrand, a, b, N)
+	end
+
+
+	# === Tracer prediction ===
+	function BP_Estimate2(p::AbstractVector{T}, t) where T
+	    dist_fn = x -> MaxEntDist(x, p)
+	    propagator = BoundaryPropagator(dist_fn, f, t)
+	    ts_iter = boundary_propagator_timeseries(propagator)
+	    return collect(ts_iter[:])
+	end
+
+	# === Objective function ===
+	function J2(u)
+	    misfit = sum(((y_obs .- BP_Estimate2(u, t_obs)) ./ σ).^2)
+	    entropy = EntMeasure(u)
+	    return misfit + 1* entropy
+	end
+
+	# === Optimization ===
+	u02 = [100.0, 100.0, 100]
+	lower2 = -[Inf, Inf, Inf]
+	upper2 = [Inf, Inf, Inf]
+
+	# results2 = optimize(J2, lower2, upper2, u02,					  Fminbox(LBFGS()),  # box‐constrained L-BFGS
+	# 				  Optim.Options(g_tol = 1e-16, f_tol = 1e-16))
+	results2 = bboptimize(
+	  J2, 
+	  u02;
+	  SearchRange  = [(-1e7, 1e7),  # α ∈ [0.1, ∞)
+					  (-1e7, 1e7), 
+					  (-1e7, 1e7)], # β ∈ [0.1, ∞)
+	  NumDimensions = 3,
+	  MaxSteps      = 1000,        # or whatever budget you like)
+	)
+end
+
+
+# ╔═╡ f29eb59f-3ff3-4bb7-80b3-ccd4aaadeecd
+begin
+	# p[1] = α (shape), p[2] = β (rate)
+    # Distributions.Gamma(k, θ) uses θ=scale=1/β
+	function gamma_from_IG(μ, λ)
+	  α = λ/μ             # shape
+	  β = λ/(μ^2)           # rate
+	  return Gamma(α, 1/β)  # Distributions.Gamma(shape, scale)
+	end
+		
+	InvGammaDist(t, p) = pdf(gamma_from_IG(p[1], p[2]), t) 
+  # === Tracer prediction using a Gamma TTD ===
+  function BP_Estimate3(p::AbstractVector{T}, t) where T
+
+    propagator = BoundaryPropagator(x -> InvGammaDist(x, p), f, t)
+    ts_iter    = boundary_propagator_timeseries(propagator)
+    return collect(ts_iter[:])
+  end
+
+  # === Objective: just the squared‐misfit ===
+  function J3(p)
+    y_model = BP_Estimate3(p, t_obs)
+    return sum(((y_obs .- y_model) ./ σ).^2)
+  end
+
+  # === Initial guess and bounds ===
+  u03    = [5., 100.]           # α≈2, β≈0.1
+  lower3 = [0.2, 0.2]         # enforce α>0, β>0
+  upper3 = [ Inf,  Inf ]
+
+  # === Run the fit ===
+  # results3 = optimize(J3, lower3, upper3, u03,
+		# 			  Fminbox(LBFGS()),  # box‐constrained L-BFGS
+		# 			  Optim.Options(g_tol = 1e-8, f_tol = 1e-8))
+	results3 = bboptimize(
+	  J3, 
+	  # u03;
+	  SearchRange  = [(0.1, 1e7),  # α ∈ [0.1, ∞)
+					  (0.1, 1e7)], # β ∈ [0.1, ∞)
+	  NumDimensions = 2,
+	  MaxSteps      = 100_000,        # or whatever budget you like)
+	)
+	
+end
+
+# ╔═╡ 2133071c-60cb-45be-9500-da2ce603b2b4
+begin
+	import Optim: minimizer
+	minimizer(x::BlackBoxOptim.OptimizationResults) = best_candidate(x)
+end
+
+# ╔═╡ 4fdec2ac-af36-4248-bc57-b98ce6842026
+function plot_minimize_results(p1, results, GFunc::Function, EstimateFunc::Function)
+		Γ_opt, Δ_opt = round.(minimizer(results))
+		params = round.(minimizer(results))
+		# p1 = plot(layout=@layout [a b{0.5w}])
 	
 		plot!(p1[1], x_pdf, Gp0.(x_pdf), lw=4, 
 		xlabel = "τ [yrs]", 
@@ -119,15 +254,37 @@ begin
 		title = "Green's Function", 
 		label = "True Distriubtion\n(Γ=$Γ_0 yrs, Δ=$Δ_0 yrs)", 
 		color = "red")
-		plot!(p1[1], x_pdf, Gp.(x_pdf, Γ_opt, Δ_opt), lw=4, 
-			  label = "Estimated Distriubtion\n(Γ=$Γ_opt yrs, Δ=$Δ_opt yrs)", 
+		plot!(p1[1], x_pdf, GFunc(x_pdf, params), lw=4, 
+			  # label = "Estimated Distriubtion\n(Γ=$Γ_opt yrs, Δ=$Δ_opt yrs)", 
 		color = "blue")
 	
 		scatter!(p1[2], t_obs, y_obs, color = "red")
 		plot!(p1[2], t, BP_Estimate([Γ_0, Δ_0], t), lw=4, color = "red")
-		plot!(p1[2], t, BP_Estimate([Γ_opt, Δ_opt], t), lw=4, color = "blue")
+		plot!(p1[2], t, EstimateFunc(params, t), lw=4, color = "blue")
+end
+
+# ╔═╡ 88b18409-ef68-4196-8ba4-56cda076d0bc
+begin
+		# Γ_opt, Δ_opt = round.(Optim.minimizer(results))
+		p1 = plot(layout=@layout [a b{0.5w}])
+		plot_minimize_results(p1, results, GPDist, BP_Estimate)	
 	
 end
+
+# ╔═╡ aa5af6f8-35fd-48b4-af60-d4bbe1250a38
+begin 
+	p2 = plot(layout=@layout [a b{0.5w}])
+	plot_minimize_results(p2, results2, MaxEntDist, BP_Estimate2)	
+end
+
+# ╔═╡ 015f9e47-3000-4203-aad4-c0e1c8f8f7fa
+begin 
+	p3 = plot(layout=@layout [a b{0.5w}])
+	plot_minimize_results(p3, results3, InvGammaDist, BP_Estimate3)	
+end
+
+# ╔═╡ 421759e3-1e0c-4f67-91dd-20acfb955c8b
+plot( 0.1:50, pdf(gamma_from_IG(20., 46.), 0.1:50))
 
 # ╔═╡ Cell order:
 # ╠═6c4083e2-1f27-11f0-1077-e9a0ae678f2d
@@ -135,4 +292,12 @@ end
 # ╠═b9d5dccc-16ed-42f5-a1b4-d9600670219f
 # ╠═d93d36a6-a0ab-424a-9100-88cb4c5990af
 # ╠═433b827e-e2c4-4e26-91a3-9292936678dc
+# ╠═c16bd826-6abd-4a75-acd3-d92177f7eddb
 # ╠═88b18409-ef68-4196-8ba4-56cda076d0bc
+# ╠═4fdec2ac-af36-4248-bc57-b98ce6842026
+# ╠═1fe0423b-7a56-4b0e-bc16-a068a1bf3a5e
+# ╠═aa5af6f8-35fd-48b4-af60-d4bbe1250a38
+# ╠═f29eb59f-3ff3-4bb7-80b3-ccd4aaadeecd
+# ╠═2133071c-60cb-45be-9500-da2ce603b2b4
+# ╠═015f9e47-3000-4203-aad4-c0e1c8f8f7fa
+# ╠═421759e3-1e0c-4f67-91dd-20acfb955c8b

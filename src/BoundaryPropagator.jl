@@ -83,8 +83,8 @@ function boundary_propagator_timeseries(
     f_atm::AbstractVector{Union{<:Function, <:AbstractInterpolation}}, 
     t_vec::AbstractVector{<:Real}; 
     C0::Union{Nothing, AbstractVector{<:Real}}, 
-    t0::Union{Nothing, <:Real}=nothing
-
+    t0::Union{Nothing, <:Real}=nothing,
+    N_simpson::Int=100  # Number of intervals for Simpson's rule (must be even)
 )
     # Get dimensions
     N, M = size(Gp_arr)
@@ -110,38 +110,57 @@ function boundary_propagator_timeseries(
     for i in 1:N, j in 1:M
         results[i, j, :] .= boundary_propagator_timeseries(Gp_arr[i, j], 
                                                            f_atm[j], 
-                                                           t_vec; C0 = C0, t0 = t0)
+                                                           t_vec; C0 = C0, t0 = t0, N_simpson = N_simpson)
     end
 
     return results
 end
 
 
+
+"""
+    simpsons_integral(f, a, b, N)
+Numerically integrate f from a to b using Simpson's rule with N intervals (N must be even).
+"""
+function simpsons_integral(f, a, b, N)
+    if N % 2 != 0
+        error("Simpson's rule requires an even number of intervals (N)")
+    end
+    h = (b - a) / N
+    x = range(a, stop=b, length=N+1)
+    fx = f.(x)
+    s = fx[1] + fx[end]
+    s += 4 * sum(fx[2:2:N])
+    s += 2 * sum(fx[3:2:N-1])
+    return s * h / 3
+end
+
 """
     boundary_propagator_timeseries(Gp, f_atm, t_vec)
     
-Calculate convolution of a boundary propagator with surface source.
+Calculate convolution of a boundary propagator with surface source using discrete Simpson's integration.
 """
 function boundary_propagator_timeseries(
     Gp::Function, 
-    f_atm::Union{<:Function, <:AbstractInterpolation}, 
-    t_vec::AbstractVector{<:Real};
-    C0::Union{Nothing, <:Real}=nothing,
-    t0::Union{Nothing, <:Real}=nothing
+    f_atm, 
+    t_vec;
+    C0=nothing,
+    t0=nothing, 
+    N_simpson::Int=100  # Number of intervals for Simpson's rule (must be even)
 )
-    result = zeros(length(t_vec))
-    
+    ftype = eltype(f_atm(t_vec[1]))
+    result = zeros(ftype, length(t_vec))
+    initial_value = C0 !== nothing ? C0 : zero(ftype)
     for (i, t) in enumerate(t_vec)
-        # Directly compute convolution integral for each time point
-        integral, _ = quadgk(tp -> Gp(t - tp) * f_atm(tp), 0, t)
-        result[i] = integral
+        if t == 0
+            result[i] = initial_value
+        else
+            # Simpson's rule for convolution integral
+            integrand_f = tp -> Gp(t - tp) * f_atm(tp)
+            result[i] = initial_value + simpsons_integral(integrand_f, 0, t, N_simpson)
+        end
     end
-
-    if isnothing(C0)
-        return result
-    else
-        return  result .+ C0
-    end
+    return result
 end
 
 """
@@ -149,7 +168,7 @@ end
     
 Calculate convolution using data stored in a BoundaryPropagator object.
 """
-function boundary_propagator_timeseries(bp::BoundaryPropagator)
+function boundary_propagator_timeseries(bp::BoundaryPropagator; N_simpson::Int=100)
     return boundary_propagator_timeseries(bp.Gp_arr, bp.f_atm, 
-                                          bp.t_vec; C0=bp.C0, t0=bp.t0)
+                                          bp.t_vec; C0=bp.C0, t0=bp.t0, N_simpson=N_simpson)
 end
