@@ -88,7 +88,7 @@ end
 
 # ╔═╡ d93d36a6-a0ab-424a-9100-88cb4c5990af
 begin
-	nobs = 100;
+	nobs = 1000;
 	obs_idx = sort(rand(collect(1:length(t)), nobs)); #get random index samples 
 	
 	t_obs = t[obs_idx]; 
@@ -107,7 +107,8 @@ begin
 	  propagator = BoundaryPropagator(x -> GPDist(x, p), f, t)
 	
 	  # extract the time series
-	  ts_iter = boundary_propagator_timeseries(propagator)
+	  ts_iter = boundary_propagator_timeseries(propagator; 
+											   integration_method = :simpsons)
 	
 	  # collect it into a Vector{T}
 	  return collect(ts_iter[:])
@@ -122,13 +123,9 @@ begin
 	upper = [Inf, Inf]
 
 	results = optimize(J, lower, upper, u0,
-					   Fminbox(LBFGS()),  # box‐constrained L-BFGS
-					  Optim.Options(g_tol = 1e-16, f_tol = 1e-16))
+					   Fminbox(LBFGS()))
 
 end
-
-# ╔═╡ c16bd826-6abd-4a75-acd3-d92177f7eddb
-
 
 # ╔═╡ f29eb59f-3ff3-4bb7-80b3-ccd4aaadeecd
 begin
@@ -145,7 +142,8 @@ begin
   function BP_Estimate3(p::AbstractVector{T}, t) where T
 
     propagator = BoundaryPropagator(x -> InvGammaDist(x, p), f, t)
-    ts_iter    = boundary_propagator_timeseries(propagator)
+    ts_iter    = boundary_propagator_timeseries(propagator; 
+												integration_method = :simpsons)
     return collect(ts_iter[:])
   end
 
@@ -161,17 +159,16 @@ begin
   upper3 = [ Inf,  Inf ]
 
   # === Run the fit ===
-  # results3 = optimize(J3, lower3, upper3, u03,
-		# 			  Fminbox(LBFGS()),  # box‐constrained L-BFGS
-		# 			  Optim.Options(g_tol = 1e-8, f_tol = 1e-8))
-	results3 = bboptimize(
-	  J3, 
-	  # u03;
-	  SearchRange  = [(0.1, 1e7),  # α ∈ [0.1, ∞)
-					  (0.1, 1e7)], # β ∈ [0.1, ∞)
-	  NumDimensions = 2,
-	  MaxSteps      = 100_000,        # or whatever budget you like)
-	)
+  results3 = optimize(J3, lower3, upper3, u03,
+					  Fminbox(LBFGS()))
+	# results3 = bboptimize(
+	#   J3, 
+	#   # u03;
+	#   SearchRange  = [(0.1, 1e7),  # α ∈ [0.1, ∞)
+	# 				  (0.1, 1e7)], # β ∈ [0.1, ∞)
+	#   NumDimensions = 2,
+	#   MaxSteps      = 100_000,        # or whatever budget you like)
+	# )
 	
 end
 
@@ -225,7 +222,6 @@ plot( 0.1:50, pdf(gamma_from_IG(20., 46.), 0.1:50))
 # ╠═b9d5dccc-16ed-42f5-a1b4-d9600670219f
 # ╠═d93d36a6-a0ab-424a-9100-88cb4c5990af
 # ╠═433b827e-e2c4-4e26-91a3-9292936678dc
-# ╠═c16bd826-6abd-4a75-acd3-d92177f7eddb
 # ╠═88b18409-ef68-4196-8ba4-56cda076d0bc
 # ╠═4fdec2ac-af36-4248-bc57-b98ce6842026
 # ╠═f29eb59f-3ff3-4bb7-80b3-ccd4aaadeecd

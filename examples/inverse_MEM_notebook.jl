@@ -185,7 +185,8 @@ begin
 	# === Normalization constant ===
 	function MaxEntFuncDenominator(λ::AbstractVector{T}; a=0, b=10000, N=200)  where T
 		
-	    return quadgk(τ -> MaxEntFuncNumerator(τ, λ, t_obs), 0, Inf)[1]
+	    # return quadgk(τ -> MaxEntFuncNumerator(τ, λ, t_obs), 0, Inf)[1]
+		return integrate(τ -> MaxEntFuncNumerator(τ, λ, t_obs), 0, Inf; method = :exponential)
 	end
 
 	# === Distribution (cached Z per call) ===
@@ -201,14 +202,15 @@ begin
 	    h = (b - a) / N
 	    τs = range(a, stop=b, length=N+1)
 		entropy(τ) =  MaxEntDist(τ, λ) * log(MaxEntDist(τ, λ) / μ)
-	    return -quadgk(entropy, 0, Inf)[1]
+	    # return -quadgk(entropy, 0, Inf)[1]
+		return integrate(entropy, 0, Inf; method = :exponential)
 	end
 
 	# === Tracer prediction ===
 	function BP_Estimate2(λ::AbstractVector{G}, t::AbstractVector{T}; a=0, b=10000, N=200) where {G, T}
 	    dist_fn(τ) = MaxEntDist(τ, λ; a=a, b=b, N=N)
 	    propagator = BoundaryPropagator(dist_fn, f, t)
-	    ts_iter = boundary_propagator_timeseries(propagator)
+	    ts_iter = boundary_propagator_timeseries(propagator; integration_method = :simpsons)
 	    return collect(ts_iter[:])
 	end
 

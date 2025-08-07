@@ -81,7 +81,7 @@ end
 # ╔═╡ 2971aa56-fb85-40bd-b19c-884d89a57af8
 begin
 	#define time of integration
-	t = 0:40
+	t = 0:0.1:40
 	# Surface flux rate is defined quadratic for t > 0
 	@. f(x) = (x >= 0) ? x^2 / 2  : 0.0
 
@@ -89,7 +89,7 @@ begin
 	BP = BoundaryPropagator(Gps, f, t) 
 
 	#solve for convolution of surface and boundary props
-	pred_values = boundary_propagator_timeseries(BP); nothing
+	pred_values = boundary_propagator_timeseries(BP; integration_method = :simpsons); nothing
 	
 	p1 = plot(t, f.(t), 
 	         label="Atmospheric Source", 
@@ -105,6 +105,9 @@ begin
 	end
 	p1
 end
+
+# ╔═╡ 18508f69-b0af-4671-af47-a54998eeb496
+pred_values[end, 1, :]
 
 # ╔═╡ b9d5dccc-16ed-42f5-a1b4-d9600670219f
 begin 
@@ -145,6 +148,7 @@ end
 # ╠═6c4083e2-1f27-11f0-1077-e9a0ae678f2d
 # ╟─a9445454-daf5-4183-8aba-cb61e8595d06
 # ╠═2971aa56-fb85-40bd-b19c-884d89a57af8
+# ╠═18508f69-b0af-4671-af47-a54998eeb496
 # ╠═b9d5dccc-16ed-42f5-a1b4-d9600670219f
 # ╠═d93d36a6-a0ab-424a-9100-88cb4c5990af
 # ╠═83c0c2e8-8044-4ca7-95b2-a716afa5ea65

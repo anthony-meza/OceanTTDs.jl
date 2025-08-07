@@ -11,7 +11,7 @@ function boundary_propagator_timeseries(
     t_vec::AbstractVector{<:Real}; 
     C0::Union{Nothing, AbstractVector{<:Real}}, 
     t0::Union{Nothing, <:Real}=nothing,
-    integration_method = :quadgk,
+    integration_method = :exponential,
 )
     # Get dimensions
     N, M = size(Gp_arr)
@@ -57,7 +57,7 @@ function boundary_propagator_timeseries(
     t_vec;
     C0=nothing,
     t0=nothing, 
-    integration_method = :quadgk,
+    integration_method = :exponential,
 )
     ftype = eltype(f_atm(t_vec[1]))
     result = zeros(ftype, length(t_vec))
@@ -69,19 +69,29 @@ function boundary_propagator_timeseries(
         error("f_atm must be a univariate function or interpolation (accepts one argument)
         that can handle negative Infinity")
     end
+    
+    # for (i, t) in enumerate(t_vec)
+    #     τ₀ = 0 
+    #     integrand_f(τ) = Gp(τ) * f_atm(t - τ)
+    #     integrated_f = indefinite_integral(integrand_f, τ₀; method = integration_method, x_nodes=t_vec)
+    #     result[i] = initial_value + integrated_f(Inf)
+    # end
 
-    τ₀ = 0 
-    if integration_method in [ :trapezoidal, :simpsons]
-        τ_nodes = range(τ₀, stop=t, length=100)  # Adjust number of nodes as needed
-    else 
-        τ_nodes = nothing 
+    for (i, t) in enumerate(t_vec)
+        if t == 0
+            result[i] = initial_value
+        else
+            # Simpson's rule for convolution integral, a trick that assumes that 
+            # f_atm==0 at t < 0
+            integrand_f = tp -> Gp(t - tp) * f_atm(tp)
+
+            #could also be this but havent tested it 
+            # integrand_f = τ -> Gp(τ) * f_atm(t - τ)
+
+            result[i] = initial_value + integrate(integrand_f, 0, t; method = integration_method)
+        end
     end
-        
-    integrand(τ, t) = Gp(τ) * f_atm(t - τ)
-    integrated(t) = indefinite_integral(τ -> integrand(τ, t), τ₀; method = integration_method, x_nodes=t_vec)
-
-    return initial_value .+ integrated.(t_vec)
-
+    return result
 end
 
 """
@@ -89,7 +99,7 @@ end
     
 Calculate convolution using data stored in a BoundaryPropagator object.
 """
-function boundary_propagator_timeseries(bp::BoundaryPropagator; integration_method = :quadgk)
+function boundary_propagator_timeseries(bp::BoundaryPropagator; integration_method = :exponential)
     return boundary_propagator_timeseries(bp.Gp_arr, bp.f_atm, 
                                           bp.t_vec; C0=bp.C0, t0=bp.t0, 
                                           integration_method = integration_method)
