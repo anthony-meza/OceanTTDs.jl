@@ -26,56 +26,16 @@ begin
 	PlutoUI, Random, QuadGK
 	# using Optim, BlackBoxOptim
 	# Random.seed!(1234)
-	using NLsolve
-
+	# using NLsolve
+	# using DoubleExponentialFormulas
+	using NonlinearSolve
+	using BenchmarkTools
+	using ForwardDiff
+	using LinearAlgebra
 end
 
 # ╔═╡ 5f5eb464-b9ab-4f50-89e0-332a32cab719
 minimizer(x::AbstractVector) = x
-
-# ╔═╡ f8b14034-845d-46e2-8420-f6cbd20857bb
-begin
-
-	function f!(F, x)
-	    F[1] = (x[1]+3)*(x[2]^3-7)+18
-	    F[2] = sin(x[2]*exp(x[1])-1)
-	end
-	
-	function j!(J, x)
-	    J[1, 1] = x[2]^3-7
-	    J[1, 2] = 3*x[2]^2*(x[1]+3)
-	    u = exp(x[1])*cos(x[2]*exp(x[1])-1)
-	    J[2, 1] = x[2]*u
-	    J[2, 2] = u
-	end
-	
-	nlsolve(f!, j!, [ 0.1; 1.2]).zero
-end
-
-# ╔═╡ 76b7f535-e142-417e-8a2c-6800539e0faa
-# begin 
-	
-# 	# Define the nonlinear function using QuadGK for integration
-# 	function F(x, p)
-# 	    # Integrate sin(x[1] * t) from t=0 to t=1
-# 	    integral, _ = quadgk(t -> sin(x[1] * t), 0, 1)
-# 	    return [integral - 0.5]
-# 	end
-	
-# 	# Initial guess
-# 	x0 = [1.0]
-	
-# 	# Solve the nonlinear equation
-# 	probs = NonlinearProblem(F, x0, [0.0])
-# 	solss = solve(probs)[:]
-# 	println("Root found: x = ", solss)
-# end
-
-# ╔═╡ 56754bf2-79a2-474e-8cf9-0d48b90d3477
-# begin
-# 	import Optim: minimizer
-# 	minimizer(x::BlackBoxOptim.OptimizationResults) = best_candidate(x)
-# end
 
 # ╔═╡ a9445454-daf5-4183-8aba-cb61e8595d06
 begin
@@ -104,233 +64,323 @@ begin
 end
 
 
+# ╔═╡ ef1d746d-97bc-490f-ade0-5b2971416876
+
+
+# ╔═╡ ada4f055-8da0-4abf-bae0-e38789276d7a
+begin 
+	τs = collect(0.1:0.1:100) 
+	#now create a timeseries based on green's function & forcing functipon
+	t = collect(1.:5:250.) #define time of integration
+	@. f_src(x) = (x >= 0.) ? sqrt(x) : 0.0 # forcing function is linear
+	τm = 250_000.
+	# nτ = Int(τ_max * 5)
+end
+
+# ╔═╡ fb9d560d-118d-4d8f-b02f-50f4ffab182d
+begin
+	break_points = [
+	    1.1 * (t[end] - t[1]),   # first break after twice the data span
+	    25_000.0               # second break at fixed value, ~ 1000 years
+	]
+	
+	nodes_points = [
+	    30  * break_points[1],                # dense in first panel
+	    0.4 * (break_points[2] - break_points[1]), # moderate in middle
+	    0.03 * (τm - break_points[2])               # lighter in last
+	]
+	
+	nodes_points = Int.(round.(nodes_points))
+	panels = make_integration_panels(0., τm, break_points, nodes_points)
+	gauss_integrator = make_integrator(:gausslegendre, panels)
+	nnodes = length(gauss_integrator.weights)
+	println("Using $nnodes Nodes")
+end
+
+# ╔═╡ e9dff805-81f6-45eb-98bb-225bc40a1963
+break_points
+
 # ╔═╡ b9d5dccc-16ed-42f5-a1b4-d9600670219f
 begin 
-    x_pdf = collect(0.1:0.1:100) 
 
+	# f(x) = sqrt(x)
 	#Setup Inverse Gaussian
 	Gp(x, Γ, Δ) = pdf(InverseGaussian(TracerInverseGaussian(Γ, Δ)), x)  # Inv. Gauss. Boundary propagator function
-	Gp0 = x -> Gp(x, Γ_0, Δ_0)
+	Gp0 = x -> Gp(x, Γ_0, Δ_0) #+ (0.001 * rand())
 
     p = plot(layout=@layout [a b{0.5w}])
-	plot!(p[1], x_pdf, Gp0.(x_pdf), lw=4, 
+	plot!(p[1], τs, Gp0.(τs), lw=4, 
 	xlabel = "τ [yrs]", 
     ylabel = "Density [1/yrs]", xlims = (0, 100), 
 	title = "Green's Function", label = nothing, color = "black")
 	
-	#now create a timeseries based on green's function & forcing functipon
-	Δt = 5
-	t = Float64.(collect(1:Δt:500)) #define time of integration
-	@. f(t::Real) = (t < 0) ? 0.0 : sqrt(t)
-	f_atm = f
-	BP = BoundaryPropagator(Gp0, f, t) #setup Boundary Propagator problem
-	pred_values = boundary_propagator_timeseries(BP)[1, 1, :]; 
+	BP = BoundaryPropagator(Function[Gp0], Function[f_src], t; 
+								τ_max = τm, integr = gauss_integrator) 
+
+	pred_values = zeros(length(Function[Gp0]), length(t))
+	pred_values[1, :] .= convolve_at(BP, 1, t)
 	
-	plot!(p[2], t, pred_values, lw=4, 
+	plot!(p[2], t, pred_values[:], lw=4, 
 	xlabel = "time [yrs]", 
     ylabel = "Tracer Value [unitless]", xlims = (0, 50), 
 	label="Interior Value Source", color = "black")
-	plot!(p[2], t,  f.(t), lw=4, label="Atmospheric Source", 
+	plot!(p[2], t,  f_src.(t), lw=4, label="Atmospheric Source", 
 	color = "green", linestyle=:dash)
     p
 end
 
 # ╔═╡ d93d36a6-a0ab-424a-9100-88cb4c5990af
 begin
-	nobs = 10;
-	obs_idx = sort(rand(collect(1:length(t)), nobs)); #get random index samples 
-	
-	t_obs = t[obs_idx]; 
-	σ = 0.5; obs_error = rand(Normal(0, σ), nobs)
-	y_obs = pred_values[obs_idx] .+ obs_error; 
-	
-	t_obs = t_obs[y_obs .> 0] #remove erroneous values that cannot be fit
-	y_obs = y_obs[y_obs .> 0] 
+	nobs = 3;
+	σ = 0.01; 
+	# obs_error = rand(Normal(0, σ), nobs)
+	y_obs = zeros(nobs) .- 1
+	t_obs = zeros(nobs)
+
+	for i_n in 1:nobs
+		while y_obs[i_n] < 0.0
+			obs_idx = rand(collect(1:length(t))); #get random index samples 
+			obs_error = rand(Normal(0, σ))
+			t_obs[i_n] = t[obs_idx]; 
+			y_obs[i_n] = pred_values[obs_idx] .+ obs_error; 
+		end
+	end
+	# t_obs = sort(t_obs)
+	# y_obs = sort(y_obs)
+	# t_obs = t_obs[y_obs .> 0];  #remove erroneous values that cannot be fit
+	# y_obs = y_obs[y_obs .> 0]; 
 end
 
 # ╔═╡ 8c58158d-1a7f-4165-b72f-2d50b17a5bdb
 t_obs
 
 # ╔═╡ c16bd826-6abd-4a75-acd3-d92177f7eddb
-function plot_minimize_results(p1, results, GFunc::Function, EstimateFunc::Function)
-		# Γ_opt, Δ_opt = round.(minimizer(results))
-		params = round.(minimizer(results))
-		# p1 = plot(layout=@layout [a b{0.5w}])
+function plot_minimize_results(p1::Plots.Plot, 
+							   opt_params::AbstractArray, 
+							   GFunc::Function,
+							   EstimateFunc::Function)
+		
+		Γ_opt, Δ_opt = round.(opt_params)
 	
-		plot!(p1[1], x_pdf, Gp0.(x_pdf), lw=4, 
+		plot!(p1[1], τs, Gp0.(τs), lw=4, 
 		xlabel = "τ [yrs]", 
-	    ylabel = "Density [1/yrs]", xlims = (0, 50), 
+	    ylabel = "Density [1/yrs]", xlims = (0, 100), 
 		title = "Green's Function", 
 		label = "True Distriubtion\n(Γ=$Γ_0 yrs, Δ=$Δ_0 yrs)", 
 		color = "red")
-		GFuncParamed(x) =  GFunc(x, params)
-		plot!(p1[1], x_pdf, GFuncParamed.(x_pdf), lw=4, 
-			  # label = "Estimated Distriubtion\n(Γ=$Γ_opt yrs, Δ=$Δ_opt yrs)", 
+		plot!(p1[1], τs, GFunc.(τs), lw=4, 
+			  label = "Estimated Distriubtion\n(Γ=$Γ_opt yrs, Δ=$Δ_opt yrs)", 
 		color = "blue")
 	
-		plot!(p1[2], t, pred_values, lw=4, color = "red")
-		scatter!(p1[2], t_obs, y_obs, color = "purple")
-		plot!(p1[2], t, EstimateFunc(params, t), lw=4, color = "blue")
+		scatter!(p1[2], t_obs, y_obs, color = "red")
+		# plot!(p1[2], t, EstimateFunc([Γ_0, Δ_0], t), lw=4, color = "red")
+		plot!(p1[2], t, EstimateFunc.(t), lw=4, color = "blue")
 end
+
+# ╔═╡ 6b02e3c5-797d-4acc-87c0-306475ff2abc
+begin 
+	results, Γ_opt, Δ_opt, opt_IG_Dist, IG_BP_Estimate =IG_BP_Inversion(Function[f_src], 
+															t_obs, y_obs, σ, 
+													τm; integr = gauss_integrator)
+	opt_params = [Γ_opt, Δ_opt]	
+	println("most optimal params: ", opt_params)
+	# τ_max = t[end] - t[1]
+	μ(τ) = 1 / τm
+
+	# Inverse-Gaussian kernel (expects TracerInverseGaussian(Γ, Δ) to exist)
+    IG_Dist(x, Γ, Δ) = pdf(InverseGaussian(TracerInverseGaussian(Γ, Δ)), x)
+    IG_Dist(τ, λ::Vector{<:Real}) = IG_Dist(τ, λ[1], λ[2])
+	
+	μ_opt(τ) = IG_Dist(τ, opt_params)
+	μ_opt_max = maximum(μ_opt.(gauss_integrator.nodes))
+	#μ_Z = integrate(μ_opt, τm, gauss_integrator, 0.0)
+	# μ(τ) = μ_opt(τ) #/ μ_Z
+end
+
+# ╔═╡ bc87c57b-60a6-4c36-8566-a4e723f76e63
+begin 
+	C0 = 0.0
+	λ = -25 .* (rand(length(y_obs)))
+	# ME_numerator_logged(τ) = MaxEntFuncNumeratorPreLogged(τ, λ, t_obs, f_src, μ)
+	# logZ = MaxEntFuncDenominatorPreLogged(λ, t_obs, f_src, μ, gauss_integrator)
+	ME_dist_prelogged = MaxEntDist(λ, t_obs, f_src, μ, gauss_integrator, implementation=:stable)
+	# @time println(integrate(ME_dist_prelogged,0.0, gauss_integrator, 0.0))
+end
+
+# ╔═╡ cf24ecc4-b846-4ca1-a995-1267f63c1fa7
+@btime MaxEntDist(λ, t_obs, f_src, μ, gauss_integrator, implementation=:stable)
+
+# ╔═╡ e34093c5-b70d-4417-9f28-7ce4c8244fc7
+plot(ME_dist_prelogged.(gauss_integrator.nodes))
+
+# ╔═╡ a5a6cb36-bef3-4502-9639-77549e5f3c84
+maximum(ME_dist_prelogged.(gauss_integrator.nodes))
 
 # ╔═╡ 1fe0423b-7a56-4b0e-bc16-a068a1bf3a5e
 begin
-	τ_max = t[end] - t[1]
-	μ = Δt / τ_max
-	# === MaxEnt function ===
-	function MaxEntFuncNumerator(τ::Real, λ::AbstractVector{T}, t_obs; a=0, b=10000, N=200) where T
-		C_s_vec = f_atm.(t_obs .- τ)
-		return μ * exp(-sum(λ .* C_s_vec))
-	end
-	# === Normalization constant ===
-	function MaxEntFuncDenominator(λ::AbstractVector{T}; a=0, b=10000, N=200)  where T
-		
-	    return quadgk(τ -> MaxEntFuncNumerator(τ, λ, t_obs), 0, Inf)[1]
-	end
 
-	# === Distribution (cached Z per call) ===
-	function MaxEntDist(τ::Real, λ::AbstractVector{T}; a=0, b=10000, N=200) where T
-		
-		Z = MaxEntFuncDenominator(λ; a=a, b=b, N=N) 
-
-	    return MaxEntFuncNumerator(τ, λ, t_obs; a=a, b=b, N=N) / Z
+    function BP_Estimate(λ, t_obs, t; τm, integr, C0)
+		ME_dist = MaxEntDist(λ, t_obs, f_src, μ, integr, implementation=:stable)
+		ME_dist_func(τ) = ME_dist(τ)
+        return convolve_at(ME_dist_func, Function[f_src], t; τ_max=τm, integr=gauss_integrator, C0=C0)
+    end
+	
+	function J2_NLS(λ, p)
+		Ĉ = BP_Estimate(λ, t_obs, t_obs; τm=τm, integr=gauss_integrator, C0=C0)
+		return @. ((Ĉ) - (y_obs))
+	end
+	function J2_NLS!(J, λ, p)
+		Ĉ = BP_Estimate(λ, t_obs, t_obs; τm=τm, integr=gauss_integrator, C0=C0)
+		@. J = ((Ĉ) - (y_obs))
 	end
 	
-	# === Entropy computation ===
-	function EntMeasure(λ::Real; a=0, b=10000, N=200)
-	    h = (b - a) / N
-	    τs = range(a, stop=b, length=N+1)
-		entropy(τ) =  MaxEntDist(τ, λ) * log(MaxEntDist(τ, λ) / μ)
-	    return -quadgk(entropy, 0, Inf)[1]
-	end
-
-	# === Tracer prediction ===
-	function BP_Estimate2(λ::AbstractVector{G}, t::AbstractVector{T}; a=0, b=10000, N=200) where {G, T}
-	    dist_fn(τ) = MaxEntDist(τ, λ; a=a, b=b, N=N)
-	    propagator = BoundaryPropagator(dist_fn, f, t)
-	    ts_iter = boundary_propagator_timeseries(propagator)
-	    return collect(ts_iter[:])
-	end
-
+	function J2_jac_NLS(λ, p)
+		nodes   = gauss_integrator.nodes
+		weights = gauss_integrator.weights
 	
-	# # === Objective function ===
-	# function J2(λ; a=0, b=10000, N=100)
-	# 	Ĉi = BP_Estimate2(λ, t_obs; a=a, b=b, N=N)
-	# 	C_obs_i = y_obs
-
-		
-	#     misfit = sum(λ .* (C_obs_i .- Ĉi))
-	#     entropy = EntMeasure(λ; a=a, b=b, N=N)
-	#     return misfit 
-	# end
-
-	# function J2(λ; a=0, b=10000, N=100)
-	# 	Ĉi = BP_Estimate2(λ, t_obs; a=a, b=b, N=N)
-	# 	C_obs_i = y_obs
-		
-		
-	# 	MaxEntDist(τ::Real, λ::AbstractVector{T}
-		
-	#     return λ .* (Ĉi .-  C_obs_i)
-	# end
-
-	# function J2_jac(λ; a=0, b=10000, N=100)
-	# 	Ĉi = BP_Estimate2(λ, t_obs; a=a, b=b, N=N)
-	# 	nC = length(Ĉi)
-	# 	C_s_vec = [τ ->  f_atm.(t_o .- τ) for t_o in t_obs]
-
-	# 	MED(τ) = MaxEntDist(τ, λ; a=a, b=b, N=N)
-		
-	# 	jac_vec = [quadgk(τ -> C_s_vec(τ) * MED(τ) * (Ĉi - C_s_vec(τ)), 0, Inf)[1] for i in 1:nC]
-	#     return jac_vec
-	# end
-
-	function J2!(J2, λ; a=0, b=10000, N=100)
-		Ĉi = BP_Estimate2(λ, t_obs; a=a, b=b, N=N)
-		C_obs_i = y_obs
-			
-	    J2 .= (Ĉi .-  C_obs_i)
-	end
-
-	function J2_jac!(J2_jac, λ; a=0, b=10000, N=100)
-		Ĉi = BP_Estimate2(λ, t_obs; a=a, b=b, N=N)
-		nC = length(Ĉi)
-		C_s_vec = [τ ->  f_atm.(t_o .- τ) for t_o in t_obs]
-
-		MED(τ) = MaxEntDist(τ, λ; a=a, b=b, N=N)
-		
-		jac_vec = [quadgk(τ -> C_s_vec[i](τ) * MED(τ) * (Ĉi[i] - C_s_vec[i](τ)), 0, Inf)[1] for i in 1:nC]
-	    J2_jac .= jac_vec
-	end
-
-
+		m = length(t_obs)   # number of residuals (observations)
+		n = length(λ)       # number of parameters
 	
-	# # === Optimization ===
-	# u02 = [1.0]
-
-	# # results2 = optimize(J2, lower2, upper2, u02,					  Fminbox(LBFGS()),  # box‐constrained L-BFGS
-	# # 				  Optim.Options(g_tol = 1e-16, f_tol = 1e-16))
-	# results2 = bboptimize(
-	#   J2, 
-	#   u02;
-	#   SearchRange  = (1e-16, 10),
-	#   NumDimensions = length(u02),
-	#   MaxSteps      = 10,        # or whatever budget you like)
-	# )
-		# fs(u, p) = u .* u .- p
-	# u0 = ones(length(t_obs))
-	# # ps = 2.0
-	# prob = NonlinearProblem((λ, p) -> J2(λ), u0, NaN)
-	# nlsolve(f!, j!, [ 0.1; 1.2])
+		# Max-Ent distribution evaluated on quadrature nodes
+		ME_dist   = MaxEntDist(λ, t_obs, f_src, μ, gauss_integrator; implementation = :stable)
+		ME_at_lags = ME_dist.(nodes)
 	
-	results2 = 	nlsolve(J2!, J2_jac!, 1 .+ zeros(nobs)).zero
+		J = zeros(m, n)
+	
+		# J[i, k] = ∑_j w_j * f(t_i - τ_j) * ME(τ_j) * ( Ĉ_k - f(t_k - τ_j) )
+		#verified correct via autodifferentiation 
+		@inbounds for i in 1:m               # rows: observations
+			ti = t_obs[i]
+			for k in 1:n                     # cols: surface sources
+				tk = t_obs[k]
+	
+				lagged_f_ti = f_src.(ti .- nodes)
+				lagged_f_tk = f_src.(tk .- nodes)
+	
+				Ĉ = dot(weights, lagged_f_tk .* ME_at_lags)
+
+				#potential cancellation issues
+				# integrand = lagged_f_ti .* ME_at_lags .* (Ĉ .- lagged_f_tk)
+				# J[i, k] = dot(weights, integrand)
+
+				A_i = dot(weights, lagged_f_ti .* ME_at_lags)
+				B_ik = dot(weights, (lagged_f_ti .* lagged_f_tk) .* ME_at_lags)
+				J[i,k] = Ĉ * A_i - B_ik
+			end
+		end
+	
+		return J .+ Diagonal(1e-12 .* ones(n))
+	end
 
 end
+
+# ╔═╡ a8edba89-5feb-4848-b859-caf28412f3f5
+BP_Estimate(λ, t_obs, t; τm=τm, integr=gauss_integrator, C0=C0)
+
+# ╔═╡ b391f1ce-77e2-4825-b573-f8c0e8a6e7a5
+begin
+	
+	function r!(R, λ, p)
+	    R .= J2_NLS(λ, p)
+	end
+	
+	function jac_r!(J, λ, p)
+		# print("ji")
+	    J .= J2_jac_NLS(λ, p)
+	end
+
+	
+	initial_x = -30.0 .* (rand(nobs) .- 0.5)
+
+	fn = NonlinearFunction(r!, jac=jac_r!)
+	prob_0 = NonlinearProblem(fn, initial_x, nothing)
+	# resultsz  = solve(prob, LevenbergMarquardt(); maxiters=200, store_trace = Val(true))
+
+	resultsz_0  = solve(prob_0, LevenbergMarquardt(); maxiters=250, store_trace = Val(true))
+
+	prob = NonlinearProblem(fn, resultsz_0[:], nothing)
+	resultsz  = solve(prob, TrustRegion(); maxiters=250, store_trace = Val(true))
+
+	results2 = resultsz[:]
+
+end
+
+# ╔═╡ 7734cb88-945f-4494-8703-d0f0fc5e4821
+resultsz.trace
+
+# ╔═╡ ce374b8d-d3b0-4307-bbaf-291f302bd314
+resultsz_0.resid
+
+# ╔═╡ 56c86bc7-00f2-4f75-875d-da0fbc6701ea
+resultsz.resid
 
 # ╔═╡ 0ff62d38-1e72-4062-9722-bded50bb4453
 begin 
+	λ_opt = results2
+
+	
+	ME_dist_obj = MaxEntDist(λ_opt, t_obs, f_src, μ, gauss_integrator, implementation=:stable)
+	ME_dist2(τ) = ME_dist_obj(τ)
+	BP_Estimate_opt(t::Real) = BP_Estimate(λ_opt, t_obs, t; τm = τm, integr = gauss_integrator, C0 = 0.0)
+	
 	p2 = plot(layout=@layout [a b{0.5w}])
-	plot_minimize_results(p2, results2, MaxEntDist, BP_Estimate2)	
+	plot_minimize_results(p2, λ_opt, ME_dist2, BP_Estimate_opt)
 end
 
-# ╔═╡ dcb63d4a-5081-4e8f-a59c-51164d460326
-MaxEntDist
-
-# ╔═╡ 49308a16-d257-4213-a0a8-140b0d0bc82e
-boundary_propagator_timeseries(propagator)
-
-# ╔═╡ 6dbe6bad-75be-4cd9-b932-dd9ca645a803
-MaxEntFuncNumerator(x_pdf, [2], t_obs)
-
-# ╔═╡ 543236f2-2252-477b-a953-b5f1fd7421a5
-MaxEntFuncDenominator(1e-2)
-
-# ╔═╡ 5330ccef-8043-4530-8dec-87cfc206fdba
-MaxEntFuncDenominator
-
-# ╔═╡ 7e7648cb-33e9-465e-b7a1-f49b8b18d357
-begin
-	MaxEntDistVec(x) = MaxEntDist(x, [-10, 10, -10, -10])
-	plot(MaxEntDistVec.(x_pdf))
+# ╔═╡ 95a0ac57-d95b-4535-9d23-3ec3ce705e88
+begin 
+	τs2 = gauss_integrator.nodes
+	plot(τs2,  gauss_integrator.weights .* Gp0.(τs2), label = "Source", lw = 8)
+	plot!(τs2, gauss_integrator.weights .* ME_dist2.(τs2), label = "Posterior", lw = 10)
+	plot!(τs2, gauss_integrator.weights .* μ.(τs2), label = "Prior", lw = 3, color = :black, xlims  = (0.,  5e3))
 end
 
+# ╔═╡ 803f5be7-52ff-48e9-aa83-844bbb8cfbd7
+maximum(ME_dist2.(τs2) .- μ_opt.(τs2))
+
+# ╔═╡ b1a49a60-8220-4133-a9f7-43396d900884
+
+
+# ╔═╡ 0ff20c4f-63a2-4227-801f-1b693e0ca3c3
+λ_opt
+
+# ╔═╡ 68502a9f-c732-4661-afd1-b310edf7926b
+ME_dist2.(τs)
+
+# ╔═╡ 73cef489-db16-4880-90de-74330ab21186
+ME_dist2.(τs) .- μ.(τs)
+
+# ╔═╡ 1dafa554-a81a-456b-9efb-63c5ea2067b3
+BP_Estimate(λ.* 0 .+  0.003, t_obs, t_obs; τm=τm, integr=gauss_integrator, C0=C0)
 
 # ╔═╡ Cell order:
 # ╠═6c4083e2-1f27-11f0-1077-e9a0ae678f2d
 # ╠═5f5eb464-b9ab-4f50-89e0-332a32cab719
-# ╠═f8b14034-845d-46e2-8420-f6cbd20857bb
-# ╠═76b7f535-e142-417e-8a2c-6800539e0faa
-# ╠═56754bf2-79a2-474e-8cf9-0d48b90d3477
 # ╟─a9445454-daf5-4183-8aba-cb61e8595d06
+# ╠═ef1d746d-97bc-490f-ade0-5b2971416876
+# ╠═ada4f055-8da0-4abf-bae0-e38789276d7a
+# ╠═fb9d560d-118d-4d8f-b02f-50f4ffab182d
+# ╠═e9dff805-81f6-45eb-98bb-225bc40a1963
 # ╠═b9d5dccc-16ed-42f5-a1b4-d9600670219f
 # ╠═8c58158d-1a7f-4165-b72f-2d50b17a5bdb
 # ╠═d93d36a6-a0ab-424a-9100-88cb4c5990af
 # ╠═c16bd826-6abd-4a75-acd3-d92177f7eddb
+# ╠═6b02e3c5-797d-4acc-87c0-306475ff2abc
+# ╠═bc87c57b-60a6-4c36-8566-a4e723f76e63
+# ╠═cf24ecc4-b846-4ca1-a995-1267f63c1fa7
+# ╠═e34093c5-b70d-4417-9f28-7ce4c8244fc7
+# ╠═a5a6cb36-bef3-4502-9639-77549e5f3c84
+# ╠═a8edba89-5feb-4848-b859-caf28412f3f5
 # ╠═1fe0423b-7a56-4b0e-bc16-a068a1bf3a5e
-# ╠═0ff62d38-1e72-4062-9722-bded50bb4453
-# ╠═dcb63d4a-5081-4e8f-a59c-51164d460326
-# ╠═49308a16-d257-4213-a0a8-140b0d0bc82e
-# ╠═6dbe6bad-75be-4cd9-b932-dd9ca645a803
-# ╠═543236f2-2252-477b-a953-b5f1fd7421a5
-# ╠═5330ccef-8043-4530-8dec-87cfc206fdba
-# ╠═7e7648cb-33e9-465e-b7a1-f49b8b18d357
+# ╠═b391f1ce-77e2-4825-b573-f8c0e8a6e7a5
+# ╠═7734cb88-945f-4494-8703-d0f0fc5e4821
+# ╠═ce374b8d-d3b0-4307-bbaf-291f302bd314
+# ╠═56c86bc7-00f2-4f75-875d-da0fbc6701ea
+# ╟─0ff62d38-1e72-4062-9722-bded50bb4453
+# ╠═95a0ac57-d95b-4535-9d23-3ec3ce705e88
+# ╠═803f5be7-52ff-48e9-aa83-844bbb8cfbd7
+# ╠═b1a49a60-8220-4133-a9f7-43396d900884
+# ╠═0ff20c4f-63a2-4227-801f-1b693e0ca3c3
+# ╠═68502a9f-c732-4661-afd1-b310edf7926b
+# ╠═73cef489-db16-4880-90de-74330ab21186
+# ╠═1dafa554-a81a-456b-9efb-63c5ea2067b3
