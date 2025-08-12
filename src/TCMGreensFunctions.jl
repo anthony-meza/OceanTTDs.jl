@@ -1,8 +1,5 @@
 module TCMGreensFunctions
 
-using Distributions
-using Distributions: @check_args
-using Distributions: @distr_support
 # using DimensionalData
 # using DimensionalData: @dim 
 # using Unitful
@@ -12,25 +9,26 @@ using LinearAlgebra
 # using MAT
 using Interpolations
 using QuadGK
+using AccurateArithmetic
 # using CSV
-
-import Distributions: mean, median, quantile, std, var, cov, cor, shape, params, pdf, InverseGaussian
-# import Base: +, alignment, zeros
-# import DimensionalData: dims
-# import LinearAlgebra: eigen
-
-export TracerInverseGaussian
-export width
-export # re-export from Distributions
-    mean, median, quantile, std, var, cov, cor, shape, params
-export # re-export from Distributions
-    InverseGaussian, pdf
-
+using ForwardDiff
+using FastGaussQuadrature
+using LinearAlgebra
+using Optim
+import Optim: minimizer
+using Distributions  # InverseGaussian
+using BlackBoxOptim
+using LeastSquaresOptim
 export BoundaryPropagator, boundary_propagator_timeseries
 
 export simpsons_integral
-
-include("tracer_inverse_gaussian.jl")
+export IG_BP_Inversion_NLLS
+export IG_BP_Inversion
+export make_integration_panels, make_integrator
+export convolve_at
+export MaxEntDist
 include("BoundaryPropagator.jl")
-
+include("tracer_inverse_gaussian.jl")
+include("InvertBP.jl")
+include("tracer_maximum_entropy_distribution.jl")
 end

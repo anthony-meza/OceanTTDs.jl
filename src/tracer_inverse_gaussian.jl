@@ -1,3 +1,20 @@
+using Distributions
+using Distributions: @check_args
+using Distributions: @distr_support
+
+import Distributions: mean, median, quantile, std, var, cov, cor, shape, params, pdf, InverseGaussian
+# import Base: +, alignment, zeros
+# import DimensionalData: dims
+# import LinearAlgebra: eigen
+
+export TracerInverseGaussian
+export width
+export # re-export from Distributions
+    mean, median, quantile, std, var, cov, cor, shape, params
+export # re-export from Distributions
+    InverseGaussian, pdf
+
+    
 """
     TracerInverseGaussian(Γ,Δ)
 using LinearAlgebra: NumberArray
