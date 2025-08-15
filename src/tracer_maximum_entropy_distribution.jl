@@ -119,7 +119,7 @@ function MaxEntFuncNumerator(τ::T,
         s = t
     end
 
-    μ(τ) * exp(-s)
+    return μ(τ) * exp(-s)
 end
 
 function MaxEntFuncNumeratorStable(τ::T,

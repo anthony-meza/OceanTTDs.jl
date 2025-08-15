@@ -28,7 +28,8 @@ begin
 	# Random.seed!(1234)
 	# using NLsolve
 	# using DoubleExponentialFormulas
-	using NonlinearSolve
+	# using NonlinearSolve
+	using Optim
 	using BenchmarkTools
 	using ForwardDiff
 	using LinearAlgebra
@@ -106,8 +107,9 @@ begin
 	# f(x) = sqrt(x)
 	#Setup Inverse Gaussian
 	Gp(x, Γ, Δ) = pdf(InverseGaussian(TracerInverseGaussian(Γ, Δ)), x)  # Inv. Gauss. Boundary propagator function
-	Gp0 = x -> Gp(x, Γ_0, Δ_0) #+ (0.001 * rand())
-
+	Gp1 = x -> Gp(x, Γ_0, Δ_0) #+ (0.001 * rand())
+	Gp2 = x -> Gp(x, Γ_0 * 2, Δ_0) #+ (0.001 * rand())
+	Gp0 = x -> (Gp1(x) + Gp2(x)) / 2
     p = plot(layout=@layout [a b{0.5w}])
 	plot!(p[1], τs, Gp0.(τs), lw=4, 
 	xlabel = "τ [yrs]", 
@@ -131,8 +133,8 @@ end
 
 # ╔═╡ d93d36a6-a0ab-424a-9100-88cb4c5990af
 begin
-	nobs = 5;
-	σ = 0.01; 
+	nobs = 3;
+	σ = .2; 
 	# obs_error = rand(Normal(0, σ), nobs)
 	y_obs = zeros(nobs) .- 1
 	t_obs = zeros(nobs)
@@ -185,7 +187,8 @@ begin
 	opt_params = [Γ_opt, Δ_opt]	
 	println("most optimal params: ", opt_params)
 	# τ_max = t[end] - t[1]
-	μ(τ) = 1 / τm
+	weightsum =  sum(gauss_integrator.weights .* gauss_integrator.nodes)
+	# μ(τ) = 1 / weightsum
 
 	# Inverse-Gaussian kernel (expects TracerInverseGaussian(Γ, Δ) to exist)
     IG_Dist(x, Γ, Δ) = pdf(InverseGaussian(TracerInverseGaussian(Γ, Δ)), x)
@@ -193,9 +196,12 @@ begin
 	
 	μ_opt(τ) = IG_Dist(τ, opt_params)
 	μ_opt_max = maximum(μ_opt.(gauss_integrator.nodes))
-	#μ_Z = integrate(μ_opt, τm, gauss_integrator, 0.0)
-	# μ(τ) = μ_opt(τ) #/ μ_Z
+	μ_Z = sum(μ_opt.(gauss_integrator.nodes))
+	μ(τ) = μ_opt(τ) / μ_Z
 end
+
+# ╔═╡ 9e54d189-d52f-44e6-afa3-d33cf76e6d6c
+μ_Z
 
 # ╔═╡ bc87c57b-60a6-4c36-8566-a4e723f76e63
 begin 
@@ -212,6 +218,9 @@ end
 
 # ╔═╡ e34093c5-b70d-4417-9f28-7ce4c8244fc7
 plot(ME_dist_prelogged.(gauss_integrator.nodes))
+
+# ╔═╡ 60f2bad0-b8d1-41cd-9551-b3d252c4c9db
+
 
 # ╔═╡ a5a6cb36-bef3-4502-9639-77549e5f3c84
 maximum(ME_dist_prelogged.(gauss_integrator.nodes))
@@ -280,39 +289,40 @@ BP_Estimate(λ, t_obs, t; τm=τm, integr=gauss_integrator, C0=C0)
 # ╔═╡ b391f1ce-77e2-4825-b573-f8c0e8a6e7a5
 begin
 	
-	function r!(R, λ, p)
-	    R .= J2_NLS(λ, p)
+	function J(λ)
+		ME_dist   = MaxEntDist(λ, t_obs, f_src, μ, gauss_integrator; implementation = :stable)
+		Zlog = ME_dist.Zlog
+		Σ = I(nobs) .* (σ^2)
+		
+		return dot(λ, y_obs) + 0.5 * (λ' * Σ * λ) + Zlog 
+		
 	end
 	
-	function jac_r!(J, λ, p)
-		# print("ji")
-	    J .= J2_jac_NLS(λ, p)
-	end
+	initial_x = rand(nobs)
+	resultsz1 = optimize(J, initial_x, SimulatedAnnealing(), 
+						Optim.Options(iterations=50); 
+						autodiff = :forward)
+	results21 = Optim.minimizer(resultsz1)
 
+	resultsz = optimize(J, results21, LBFGS(), 
+						Optim.Options(iterations=50); 
+						autodiff = :forward)
 	
-	initial_x = -30.0 .* (rand(nobs) .- 0.5)
+	# results2opt = Optim.minimizer(resultsz)
 
-	fn = NonlinearFunction(r!, jac=jac_r!)
-	prob_0 = NonlinearProblem(fn, initial_x, nothing)
-	# resultsz  = solve(prob, LevenbergMarquardt(); maxiters=200, store_trace = Val(true))
+	# fn = NonlinearFunction(r!, jac=jac_r!)
+	# prob_0 = NonlinearProblem(fn, initial_x, nothing)
+	# # resultsz  = solve(prob, LevenbergMarquardt(); maxiters=200, store_trace = Val(true))
 
-	resultsz_0  = solve(prob_0, LevenbergMarquardt(); maxiters=250, store_trace = Val(true))
+	# resultsz_0  = solve(prob_0, LevenbergMarquardt(); maxiters=250, store_trace = Val(true))
 
-	prob = NonlinearProblem(fn, resultsz_0[:], nothing)
-	resultsz  = solve(prob, TrustRegion(); maxiters=250, store_trace = Val(true))
+	# prob = NonlinearProblem(fn, resultsz_0[:], nothing)
+	# resultsz  = solve(prob, TrustRegion(); maxiters=250, store_trace = Val(true))
 
-	results2 = resultsz[:]
-
+	# results2 = resultsz[:]
+	results2 = Optim.minimizer(resultsz)
+	resultsz
 end
-
-# ╔═╡ 7734cb88-945f-4494-8703-d0f0fc5e4821
-resultsz.trace
-
-# ╔═╡ ce374b8d-d3b0-4307-bbaf-291f302bd314
-resultsz_0.resid
-
-# ╔═╡ 56c86bc7-00f2-4f75-875d-da0fbc6701ea
-resultsz.resid
 
 # ╔═╡ 0ff62d38-1e72-4062-9722-bded50bb4453
 begin 
@@ -333,7 +343,7 @@ begin
 	plot(τs2,  gauss_integrator.weights .* Gp0.(τs2), label = "Source", lw = 8)
 	plot!(τs2, gauss_integrator.weights .* ME_dist2.(τs2), label = "Posterior", lw = 10)
 	plot!(τs2, gauss_integrator.weights .* μ.(τs2), label = "Prior", lw = 3, color = :black)
-	xlims!((0.,  250))
+	xlims!((-1,  250))
 end
 
 # ╔═╡ 803f5be7-52ff-48e9-aa83-844bbb8cfbd7
@@ -367,16 +377,15 @@ BP_Estimate(λ.* 0 .+  0.003, t_obs, t_obs; τm=τm, integr=gauss_integrator, C0
 # ╠═d93d36a6-a0ab-424a-9100-88cb4c5990af
 # ╠═c16bd826-6abd-4a75-acd3-d92177f7eddb
 # ╠═6b02e3c5-797d-4acc-87c0-306475ff2abc
+# ╠═9e54d189-d52f-44e6-afa3-d33cf76e6d6c
 # ╠═bc87c57b-60a6-4c36-8566-a4e723f76e63
 # ╠═cf24ecc4-b846-4ca1-a995-1267f63c1fa7
 # ╠═e34093c5-b70d-4417-9f28-7ce4c8244fc7
+# ╠═60f2bad0-b8d1-41cd-9551-b3d252c4c9db
 # ╠═a5a6cb36-bef3-4502-9639-77549e5f3c84
 # ╠═a8edba89-5feb-4848-b859-caf28412f3f5
 # ╠═1fe0423b-7a56-4b0e-bc16-a068a1bf3a5e
 # ╠═b391f1ce-77e2-4825-b573-f8c0e8a6e7a5
-# ╠═7734cb88-945f-4494-8703-d0f0fc5e4821
-# ╠═ce374b8d-d3b0-4307-bbaf-291f302bd314
-# ╠═56c86bc7-00f2-4f75-875d-da0fbc6701ea
 # ╠═0ff62d38-1e72-4062-9722-bded50bb4453
 # ╠═95a0ac57-d95b-4535-9d23-3ec3ce705e88
 # ╠═803f5be7-52ff-48e9-aa83-844bbb8cfbd7
