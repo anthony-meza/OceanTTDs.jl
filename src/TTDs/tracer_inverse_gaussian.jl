@@ -96,9 +96,8 @@ skewness(d::TracerInverseGaussian) = 3sqrt(d.Γ / shape(d))
 # #### Evaluation
 
 function pdf(d::TracerInverseGaussian{T}, x::Number) where T<:Number
-    unt = unit(d.Γ) 
     dig = InverseGaussian(d)
-    return pdf(dig,ustrip(x))./unt
+    return pdf(dig, x)
 end
 
 # function logpdf(d::TracerInverseGaussian{T}, x::Real) where T<:Real

@@ -1,9 +1,10 @@
 # using Interpolations
-# using FastGaussQuadrature
+using FastGaussQuadrature
 # using LinearAlgebra
 # using BenchmarkTools
 # using QuadGK
 
+export make_integrator, make_integration_panels
 
 function make_integrator(type::Symbol, panels::Vector{<:Tuple{T,T,<:Integer}}) where T
     @assert type in [:gausslegendre, :uniform] "Piecewise panels are only supported for :gausslegendre and :uniform"
