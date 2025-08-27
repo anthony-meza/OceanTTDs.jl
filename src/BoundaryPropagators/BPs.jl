@@ -5,6 +5,7 @@
 #############################
 # Internal utilities
 #############################
+export BoundaryPropagatorTTD
 _is_discrete(d)   = d isa DiscreteUnivariateDistribution
 _is_continuous(d) = d isa ContinuousUnivariateDistribution
 
@@ -98,11 +99,11 @@ end
 
 # t1   = collect(0.0:0.25:20.0); sfc1 = Δt -> exp(-((Δt - 5.0)/1.3)^2)
 # t2   = collect(0.0:0.5:30.0);  sfc2 = Δt -> exp(-0.1*max(Δt,0)) * sin(0.6*Δt)
-# TracerObservationTimes(t, f_src) = TracerObservation(t, NaN .+ zero(t), f_src = f_src)
-# trs  = [TracerObservationTimes(t1, sfc1), TracerObservationTimes(t2, sfc2)]
+# isTracerObservationTimes(t, f_src) = TracerObservation(t, NaN .+ zero(t), f_src = f_src)
+# trss  = [TracerObservationTimes(t1, sfc1), TracerObservationTimes(t2, sfc2)]
+# trss = TracerObservation{Float64}[TracerObservationTimes(t1, sfc1)]
 
-
-# bp_d = BoundaryPropagatorTTD(d_disc, trs, τ_support; τ_max=maximum(τ_support), C0=0.0)
+# bp_d = BoundaryPropagatorTTD(d_disc, trss, τ_support; τ_max=maximum(τ_support), C0=0.0)
 # y1d  = convolve_tracer(bp_d, 1)
 # y2d  = convolve_tracer(bp_d, 2)
 

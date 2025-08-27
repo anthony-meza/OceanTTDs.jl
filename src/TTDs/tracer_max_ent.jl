@@ -3,7 +3,7 @@
 # Optional PDF cache (default: true)
 #############################
 
-export LambdaIndexMap, MaxEntTTD, MaxEntTTDStable
+export LambdaIndexMap, IndexLambdaMap, MaxEntTTD, MaxEntTTDStable
 
 # -------------------------------
 # LambdaIndexMap (bookkeeping for flat λ)
@@ -29,21 +29,52 @@ function LambdaIndexMap(tracers::AbstractVector{<:TracerObservation})
 end
 
 # -------------------------------
+# IndexLambdaMap (reverse mapping)
+# -------------------------------
+
+"""
+    IndexLambdaMap(tracers)
+
+Map flat integer indices back to specific tracer observations.
+Given a flat index i, returns (tracer_idx, obs_idx) indicating which tracer and which observation within that tracer.
+"""
+struct IndexLambdaMap
+    tracer_indices::Vector{Int}
+    obs_indices::Vector{Int}
+end
+
+function IndexLambdaMap(tracers::AbstractVector{<:TracerObservation})
+    tracer_indices = Int[]
+    obs_indices = Int[]
+    
+    for (tracer_idx, tracer) in enumerate(tracers)
+        for obs_idx in 1:length(tracer.t_obs)
+            push!(tracer_indices, tracer_idx)
+            push!(obs_indices, obs_idx)
+        end
+    end
+    
+    return IndexLambdaMap(tracer_indices, obs_indices)
+end
+
+# -------------------------------
 # MaxEnt log/numerators (per τ)
 # -------------------------------
 
 """
-    maxent_lognumerator(τ, λ, tracers, λmap, prior; debug_checks=false)
+    maxent_lognumerator(τ, λ, tracers, λmap, prior, indexmap; debug_checks=false)
 
 Compute:
     log μ(τ) - ∑_k ∑_j λ[idx(k,j)] * F_k( t_{k,j} - τ )
+where prior[indexmap[τ]] gives the prior value for τ, or -Inf if τ not in support.
 """
 function maxent_lognumerator(
     τ,
     λ::AbstractVector,
     tracers::AbstractVector{<:TracerObservation},
     λmap::LambdaIndexMap,
-    prior;
+    prior::AbstractVector,
+    indexmap::Dict;
     debug_checks::Bool=false
 )
     length(λmap.ranges) == length(tracers) ||
@@ -72,11 +103,16 @@ function maxent_lognumerator(
         end
     end
 
-    return log(prior(τ)) - s
+    # Find index of τ in support, return -Inf if not found
+    idx = get(indexmap, τ, 0)
+    if idx == 0
+        return -Inf  # τ not in support
+    end
+    return log(prior[idx]) - s
 end
 
-maxent_numerator(τ, λ, tracers, λmap, prior; debug_checks=false) =
-    exp(maxent_lognumerator(τ, λ, tracers, λmap, prior; debug_checks=debug_checks))
+maxent_numerator(τ, λ, tracers, λmap, prior, indexmap; debug_checks=false) =
+    exp(maxent_lognumerator(τ, λ, tracers, λmap, prior, indexmap; debug_checks=debug_checks))
 
 # -------------------------------
 # Distribution types (optional pdf cache)
@@ -122,11 +158,11 @@ function MaxEntTTD(
     w       = weights
     logw    = w === nothing ? zeros(T, length(supp)) : log.(w)
 
-    LogNum = τ -> maxent_lognumerator(τ, λ, tracers, λmap, prior; debug_checks=debug_checks)
+    LogNum = τ -> maxent_lognumerator(τ, λ, tracers, λmap, prior, index; debug_checks=debug_checks)
     a      = LogNum.(supp)
     Zlog   = logsumexp_with_logw(a, logw)
     probs  = cache_pdf ? (@. exp(a - Zlog)) : nothing
-    return MaxEntTTDStable{T,typeof(prior),typeof(λ),typeof(tracers),typeof(λmap)}(
+    return MaxEntTTDStable{typeof(Zlog),typeof(prior),typeof(λ),typeof(tracers),typeof(λmap)}(
         λ, tracers, prior, supp, w, λmap, Zlog, index, probs)
 end
 
@@ -147,7 +183,7 @@ function pdf(d::MaxEntTTDStable, τ::Real)
     if d.probs !== nothing
         return d.probs[i]
     else
-        ℓ = maxent_lognumerator(τ, d.λ, d.tracers, d.λmap, d.prior)
+        ℓ = maxent_lognumerator(τ, d.λ, d.tracers, d.λmap, d.prior, d.indexmap)
         return exp(ℓ - d.Zlog)
     end
 end
@@ -160,7 +196,7 @@ function logpdf(d::MaxEntTTDStable, τ::Real)
     if d.probs !== nothing
         return log(d.probs[i])
     else
-        ℓ = maxent_lognumerator(τ, d.λ, d.tracers, d.λmap, d.prior)
+        ℓ = maxent_lognumerator(τ, d.λ, d.tracers, d.λmap, d.prior, d.indexmap)
         return ℓ - d.Zlog
     end
 end

@@ -192,3 +192,66 @@ function convolve(
     return out
 end
 
+
+"""
+    _convolve_vector(TTD, f_src, t_obs; τ_support, C0=0.0)
+
+Convolve a TTD vector with a source function at a single observation time.
+
+# Arguments
+- `TTD`: Transit time distribution weights (assumes lag increases with increasing index)
+- `f_src`: Source function f(t)
+- `t_obs`: Single observation time
+- `τ_support`: Transit time support points (must be sorted in increasing order)
+- `C0`: Constant offset (default: 0.0)
+
+Note: This function assumes that lag increases with increasing TTD index, 
+i.e., τ_support[i] ≤ τ_support[i+1] for proper causality handling.
+"""
+function _convolve_vector(TTD::Vector{G}, f_src::Function, t_obs::T;
+                          τ_support::AbstractVector, C0::Real = 0.0) where {T, G}
+      # Initialize accumulator with proper type promotion
+      acc = zero(promote_type(G, T))
+      for (j, τ) in enumerate(τ_support)
+            if t_obs >= τ  # Causality constraint
+                acc += TTD[j] * f_src(t_obs - τ)
+            end
+      end
+      return acc + C0
+  end
+
+"""
+    convolve(TTD::AbstractVector, f_src::Function, t_obs::AbstractVector; 
+             τ_support::AbstractVector, C0::Real = 0.0)
+
+Convolve a discrete TTD vector with a source function at observation times.
+
+# Arguments
+- `TTD`: Discrete TTD weights/probabilities as a vector
+- `f_src`: Source function f(t)
+- `t_obs`: Observation times
+- `τ_support`: Transit time support points corresponding to TTD entries
+- `C0`: Constant offset (default: 0.0)
+
+# Returns
+Convolution result at each observation time.
+
+# Example
+```julia
+τs = collect(1:100)
+TTD_weights = pdf.(InverseGaussian(25, 25), τs)  # Discrete TTD
+f_src = t -> (t >= 0) ? 1.0 : 0.0  # Unit step
+t_obs = [10.0, 20.0, 30.0]
+
+result = convolve(TTD_weights, f_src, t_obs; τ_support=τs)
+```
+"""
+function convolve(TTD::Vector{G}, f_src::Function, t_obs::Vector{T}; 
+                  τ_support::Vector, C0::Real = 0.0) where {G, T}
+    out_type = promote_type(G, T) #promotion required to work with JuMP
+    out = Vector{out_type}(undef, length(t_obs))
+    for (i, t) in pairs(t_obs)
+        out[i] = _convolve_vector(TTD, f_src, t; τ_support=τ_support, C0=C0)
+    end
+    return out
+end

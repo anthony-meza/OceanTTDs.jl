@@ -18,19 +18,26 @@ where μ is the base measure (`prior`).
 """
 function maxent_err_lognumerator(
     τ,
-    λ::Real,
-    prior;
+    λ::G,
+    prior,
+    indexmap;
     debug_checks::Bool=false
-)
-    vμ = prior(τ)
+) where {G}
+
+    idx = get(indexmap, τ, 0)
+    if idx == 0
+        return -Inf  # τ not in support
+    end
+
+    vμ = prior[idx]
     if debug_checks
         @assert _is_finite_real(vμ) && vμ > 0 "prior(τ) must be positive, finite"
     end
     return log(vμ) - λ*τ
 end
 
-maxent_err_numerator(τ, λ, prior; debug_checks=false) =
-    exp(maxent_err_lognumerator(τ, λ, prior; debug_checks=debug_checks))
+maxent_err_numerator(τ, λ, prior, indexmap; debug_checks=false) =
+    exp(maxent_err_lognumerator(τ, λ, prior, indexmap; debug_checks=debug_checks))
 
 # -------------------------------
 # Distribution types (optional pdf cache)
@@ -44,6 +51,8 @@ struct MaxEntTTDErrStable{T,Fprior,LType} <: DiscreteUnivariateDistribution
     Zlog::T
     indexmap::Dict{T,Int}
     probs::Union{Nothing,Vector{T}}
+    expected_error::T
+
 end
 
 # -------------------------------
@@ -59,13 +68,13 @@ Build a discrete MaxEnt **error** distribution over `support` for a single λ.
 If `cache_pdf==true`, precomputes and stores `probs` (length == length(support)).
 """
 function MaxEntTTDErr(
-    λ::Real,
-    prior,
+    λ::G,
+    prior::AbstractVector,
     support::AbstractVector{T};
     weights::Union{Nothing,AbstractVector{T}} = nothing,
     cache_pdf::Bool = true,
     debug_checks::Bool = false,
-) where {T<:Real}
+) where {T<:Real, G}
 
     @assert !isempty(support) "support cannot be empty"
     @assert issorted(support) "support must be sorted ascending"
@@ -84,7 +93,7 @@ function MaxEntTTDErr(
     
     #calculating the numerator and denominator of the error distribution in 
     #log space for numerical stability. 
-    LogNum = τ -> maxent_err_lognumerator(τ, λ, prior; debug_checks=debug_checks)
+    LogNum = τ -> maxent_err_lognumerator(τ, λ, prior, index; debug_checks=debug_checks)
     a      = LogNum.(supp)
     Zlog   = logsumexp_with_logw(a, logw)
 
@@ -98,8 +107,22 @@ function MaxEntTTDErr(
         nothing
     end
 
-    return MaxEntTTDErrStable{T,typeof(prior),typeof(λ)}(
-        λ, prior, supp, w, Zlog, index, probs)
+    # Compute expected error (mean of the distribution)
+    expected_error = if probs !== nothing
+        sum(probs .* supp)
+    else
+        # Compute on the fly if probs not cached
+        p_temp = if w === nothing
+            @. exp(a - Zlog)
+        else
+            @. exp((a + logw) - Zlog)
+        end
+        sum(p_temp .* supp)
+    end
+
+    
+    return MaxEntTTDErrStable{typeof(Zlog),typeof(prior),typeof(λ)}(
+        λ, prior, supp, w, Zlog, index, probs, expected_error)
 
 
 end
@@ -121,7 +144,7 @@ function pdf(d::MaxEntTTDErrStable, τ::Real)
     if d.probs !== nothing
         return d.probs[i]
     else
-        Le = maxent_err_lognumerator(τ, d.λ, d.prior)
+        Le = maxent_err_lognumerator(τ, d.λ, d.prior, d.indexmap)
         lw = d.weights === nothing ? zero(Le) : log(d.weights[i])
         return exp(Le + lw - d.Zlog)
     end
@@ -176,7 +199,7 @@ end
 #     if d.probs !== nothing
 #         return log(d.probs[i])
 #     else
-#         Le = maxent_err_lognumerator(τ, d.λ, d.prior)
+#         Le = maxent_err_lognumerator(τ, d.λ, d.prior, d.indexmap)
 #         lw = d.weights === nothing ? zero(Le) : log(d.weights[i])
 #         return Le + lw - d.Zlog
 #     end

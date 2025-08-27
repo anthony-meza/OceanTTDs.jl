@@ -1,65 +1,57 @@
 module stat_utils
     using Statistics, LinearAlgebra, Distributions
-    export cov_from_cor, invcov_from_cor, pmf_from
+    using CovarianceEstimation, Random
+    
+    export BootstrapShrinkageCovariance, pmf_from
 
-    function pmf_from(dist::UnivariateDistribution, support)
+    function is_natural_number(n)
+        return isa(n, Integer) && n >= 0
+    end
+
+    function pmf_from(dist::UnivariateDistribution, support::AbstractVector, weights = nothing)
         ℓ = logpdf.(dist, support)        # log-pdf values
+
+        # Apply weights if provided
+        if weights !== nothing
+            ℓ .+= log.(weights)           # add log-weights for numerical stability
+        end
+
         m = maximum(ℓ)                    # shift for stability
-        w = exp.(ℓ .- m)                  # exponentiate
-        return w ./ sum(w)                # normalize
+        ℓ .= exp.(ℓ .- m)                 # reuse ℓ vector, exponentiate in-place
+        s = sum(ℓ)                        # compute sum
+        ℓ ./= s                           # normalize in-place
+
+        ℓ[ℓ .< eps(eltype(ℓ))*maximum(ℓ)] .= 0
+        ℓ ./= sum(ℓ)
+
+        return ℓ                          # return reused vector
     end
 
-    function cov_from_cor(X::AbstractMatrix{T}; dims::Int=2, tol::Real=0.0) where {T<:Real}
-        # 1) Std per variable and raw correlation
-        σ = vec(std(X; dims=dims))
-        R = cor(X; dims=dims)
+    function BootstrapShrinkageCovariance(sampling_function::Function, 
+                                sampling_distribution;  
+                            total_samples = nothing)
 
-        # 2) Handle zero/near-zero variance variables
-        #    Set correlation to zero and variance to one for constant variables
-        constvar = σ .<= tol
-        if any(constvar)
-            R[constvar, :] .= 0
-            R[:, constvar] .= 0
-            @inbounds for i in findall(constvar)
-                R[i,i] = 1
-            end
+        if !is_natural_number(total_samples)
+            throw(ArgumentError("total_samples must be a positive integer"))
         end
 
-        # 3) Rescale to covariance: Σ = Dσ * R * Dσ
-        Dσ = Diagonal(σ)
-        Σ  = Dσ * R * Dσ
-        p = size(Σ,1)
-
-        if isposdef(Σ)
-            
-            return Symmetric(Σ, :U)
-        else
-            warning_string1 = "Covariance matrix not positive-definite, using ridge regularization to ensure positive-definiteness."
-            warning_string2 = "\nThis may affect the covariance matrix's properties, especially if κ_target is too high."
-            @warn warning_string1
-            @warn warning_string2
-            max_Σ = maximum(Σ)
-            #calculates a mean variance-based ridge parameter
-            λridge = ridge_for_kappa(Σ; κ_target = 1e8, eps = 1e-12)
-            @warn ("Maximum value in covariance matrix is = $max_Σ")
-            @warn ("Using ridge regularization with λ = $λridge")
-
-            return Symmetric(Σ + λridge*I, :U)
+        if !isa(sampling_distribution, Distribution)
+            throw(ArgumentError("sampling_distribution must be a Distribution"))
         end
-        return 
+
+        feature_length = length(sampling_function(rand(sampling_distribution)))
+        ensemble = Matrix{Float64}(undef, total_samples, feature_length)
+
+        random_samples = rand(sampling_distribution, total_samples)
+
+        for i in eachindex(random_samples)
+            @views ensemble[i, :] = sampling_function(random_samples[i])
+        end
+
+        LSE = LinearShrinkage
+        method = LSE(target=DiagonalCommonVariance(), shrinkage=:rblw)
+        Σ = cov(method, ensemble)
+        return Σ, pinv(Σ)
     end
-
-    function invcov_from_cor(X::AbstractMatrix{T}; dims::Int=2) where {T<:Real}
-        # std per variable (vector) and correlation matrix
-
-        Σ = cov_from_cor(X; dims=dims)
-
-        # isposdef(Σ) || throw(ArgumentError("Covariance matrix must be positive-definite."))
-        
-        F = cholesky(Σ)
-        invF = inv(F)
-        return Symmetric(invF)
-    end
-
 
 end # module stat_utils

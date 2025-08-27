@@ -1,39 +1,16 @@
-
-export invert_ig, invert_ig_equalvars
+export max_ent_inversion, gen_max_ent_inversion
 #############################
 # Inversion: free (Γ, Δ)
 #############################
 
-@inline function _clamp_to_bounds(x, lo, hi)
-    x < lo && return lo + eps(lo)
-    isfinite(hi) && x > hi && return hi - eps(hi)
-    return x
-end
-
-"""
-    invert_ig(observations; τ_max, integrator, C0=0,
-              u0=[Γ0,Δ0], lower=[1.0,12.0], upper=[Inf,Inf],
-              warmstart=:anneal, sa_iters=50,
-              lbfgs_iters=200)
-
-Fit a shared `TracerInverseGaussian(Γ,Δ)` across all `observations::Vector{TracerObservation}`.
-Creates `TracerEstimate`s internally and fills `yhat`.
-
-Returns: `optimizer_results, Γ̂, Δ̂, estimates::Vector{TracerEstimate}`.
-"""
 function max_ent_inversion(observations::Union{G, AbstractVector{G}};
-                   τ_max,
-                   integrator,
-                   C0::T = zero(T),
-                   u0::Vector{T} = [1e3, 1e2],
-                   lower::Vector{T} = [1.0, 12.0],
-                   upper::Vector{T} = [Inf,  Inf],
-                   warmstart::Symbol = :anneal,
-                   sa_iters::Int = 50,
-                   lbfgs_iters::Int = 200) where {T<:Real, G<:TracerObservation{T}}
-    
+                       C0 = nothing,               
+                    prior_distribution::Vector,
+                   support::Vector) where {G<:TracerObservation}
     observations_vec = observations isa AbstractVector ? observations : [observations]
-
+    T = tracer_eltype(observations_vec[1])
+    τs = support 
+    nτ = length(τs)
     # preflight
     any(obs -> obs.f_src === nothing, observations_vec) &&
         throw(ArgumentError("All observations_vec must have f_src defined for inversion."))
@@ -41,181 +18,197 @@ function max_ent_inversion(observations::Union{G, AbstractVector{G}};
     # create estimates from observations_vec
     estimates = [TracerEstimate(obs) for obs in observations_vec]
 
-    # broadcastables
-    τs   = τ_max      isa AbstractVector ? τ_max      : fill(T(τ_max), length(observations_vec))
-    ints = integrator isa AbstractVector ? integrator : fill(integrator, length(observations_vec))
-    C0s  = C0         isa AbstractVector ? C0         : fill(T(C0), length(observations_vec))
+    # Handle C0: nothing -> zeros, scalar -> fill, vector -> use as-is
+    if C0 === nothing
+        C0s = zeros(T, length(observations_vec))
+    elseif C0 isa AbstractVector
+        C0s = C0
+    else
+        C0s = fill(T(C0), length(observations_vec))
+    end
 
-    # objective: weighted SSE, compute yhats inline
-    function J(λ)
-        Γ = T(λ[1]); Δ = T(λ[2])
-        d = InverseGaussian(TracerInverseGaussian(Γ, Δ))
-        s = zero(T)
+    generate_MaxEntTTD(λ::AbstractVector) = MaxEntTTD(λ, 
+                                        observations_vec,
+                                        prior_distribution,
+                                        support;
+                                        weights = nothing,
+                                        cache_pdf = true,
+                                        debug_checks = false)
+    λ2i_map = LambdaIndexMap(observations_vec)
+    i2λ_map = IndexLambdaMap(observations_vec)
+
+    function r!(R, λ, p)
+        d = generate_MaxEntTTD(λ)
         @inbounds for k in eachindex(observations_vec)
-            obs = observations_vec[k]
-            ŷ = convolve(d, obs.f_src, obs.t_obs; τ_max=τs[k], integrator=ints[k], C0=C0s[k])
-            if obs.σ_obs === nothing
-                @inbounds for i in eachindex(obs.y_obs)
-                    r = obs.y_obs[i] - ŷ[i]
-                    s = muladd(r, r, s)
-                end
-            else
-                σ = obs.σ_obs
-                @inbounds for i in eachindex(obs.y_obs)
-                    r = (obs.y_obs[i] - ŷ[i]) / σ[i]
-                    s = muladd(r, r, s)
-                end
+            obs = observations_vec[k];
+            ŷ = convolve(d.probs, obs.f_src, obs.t_obs; τ_support = τs, C0=C0s[k])
+
+            obs_ranges = λ2i_map.ranges[k]
+            R[obs_ranges] .= (ŷ .- obs.y_obs)
+        end
+    end
+
+
+    function jac_r!(J, λ, p)
+        m = total_observations(observations_vec)   # number of residuals (observations)
+        n = length(λ)       # number of parameters
+        
+        # Check Jacobian matrix dimensions
+        size(J) == (m, n) || throw(DimensionMismatch("Jacobian matrix size $(size(J)) != ($m, $n)"))
+
+        # Max-Ent distribution evaluated on quadrature nodes
+        d = generate_MaxEntTTD(λ)
+
+        # J[i, k] = ∑_j f(t_i - τ_j) * d(τ_j) * ( Ĉ_k - f(t_k - τ_j) )
+        @inbounds for i in 1:m               # rows: observations
+            tri = i2λ_map.tracer_indices[i]
+            obi = i2λ_map.obs_indices[i]
+
+            ti = observations_vec[tri].t_obs[obi]
+            fi = observations_vec[tri].f_src
+
+            for k in 1:n                     # cols: surface sources
+                trk = i2λ_map.tracer_indices[k]
+                ork = i2λ_map.obs_indices[k]
+
+                tk =  observations_vec[trk].t_obs[ork]
+                fk = observations_vec[trk].f_src
+
+                lagged_f_ti = fi.(ti .- d.support)
+                lagged_f_tk = fk.(tk .- d.support)
+
+                Ĉ_k = dot(lagged_f_tk, d.probs) 
+                
+                A_i = dot(lagged_f_ti, d.probs)
+                B_ik = dot(lagged_f_ti .* lagged_f_tk, d.probs)
+                J[i,k] = Ĉ_k * A_i - B_ik
+
             end
         end
-        return s
+
     end
 
-    # warm start (log-parameter anneal)
-    if warmstart === :anneal
-        exp_map(z)     = exp.(z)
-        exp_map_inv(λ) = log.(max.(λ, 1e-12))
-        z0 = exp_map_inv(u0)
-        sa = Optim.optimize(z -> J(exp_map(z)), z0, SimulatedAnnealing(),
-                            Optim.Options(iterations=sa_iters))
-        λ_sa = exp_map(Optim.minimizer(sa))
-        if J(λ_sa) < J(u0)
-            u0 = [ _clamp_to_bounds(λ_sa[1], lower[1], upper[1]),
-                   _clamp_to_bounds(λ_sa[2], lower[2], upper[2]) ]
-        end
-    end
+    nobs = total_observations(observations_vec)
+	initial_λ = zeros(nobs)
 
-    optimizer_results = Optim.optimize(J, lower, upper, u0, Fminbox(LBFGS()),
-                             Optim.Options(iterations=lbfgs_iters))
-    Γ̂, Δ̂ = Optim.minimizer(optimizer_results)
+    # Set up nonlinear problem
+    fn = NonlinearFunction(r!, jac = jac_r!)  # Can use autodiff for Jacobian
+    initial_prob = NonlinearProblem(fn, initial_λ, nothing)
+    
+    # First optimization pass: Levenberg-Marquardt
+    lm_λ_result = solve(initial_prob, LevenbergMarquardt(); 
+                      maxiters=250, store_trace=Val(true))
+    
+    # Second optimization pass: Trust Region with refined initial guess
+    refined_prob = NonlinearProblem(fn, lm_λ_result[:], nothing)
+    tr_λ_result = solve(refined_prob, TrustRegion(); 
+                        maxiters=250, store_trace=Val(true))
 
     # final yhat write-back
-    d★ = InverseGaussian(TracerInverseGaussian(T(Γ̂), T(Δ̂)))
+    dhat = generate_MaxEntTTD(tr_λ_result[:])
     @inbounds for k in eachindex(observations_vec)
         obs = observations_vec[k]
-        yhat_k = convolve(d★, obs.f_src, obs.t_obs; τ_max=τs[k], integrator=ints[k], C0=C0s[k])
+        yhat_k = convolve(dhat.probs, obs.f_src, obs.t_obs; τ_support = τs, C0=C0s[k])
         update_estimate!(estimates[k], yhat_k)
     end
 
-    return optimizer_results, Γ̂, Δ̂, estimates
+    return InversionResult(
+        parameters = tr_λ_result[:], 
+        obs_estimates = estimates,
+        distribution = dhat.probs,
+        integrator = nothing,
+        support = support, 
+        method = :max_ent,
+        optimizer_output = [lm_λ_result, tr_λ_result]
+    )
+
 end
 
-#############################
-# Inversion: constrained Δ ≡ Γ
-#############################
-"""
-    invert_ig_equalvars(observations; τ_max, integrator, C0=0,
-                        u0=[Γ0], lower=[1.0], upper=[Inf],
-                        warmstart=:anneal, sa_iters=50,
-                        lbfgs_iters=200)
-
-Fit constrained model with Δ ≡ Γ. Creates and fills `TracerEstimate`s.
-
-Returns: `optimizer_results, Γ̂, estimates::Vector{TracerEstimate}`.
-"""
-function invert_ig_equalvars(observations::Union{G, AbstractVector{G}};
-                             τ_max,
-                             integrator,
-                             C0 = zero(T),
-                             u0 = [1e3],
-                             lower = [1.0],
-                             upper = [Inf],
-                             warmstart::Symbol = :anneal,
-                             sa_iters::Int = 50,
-                             lbfgs_iters::Int = 200) where {T<:Real, G<:TracerObservation{T}}
-
+#Generalized Max Ent Inversion 
+function gen_max_ent_inversion(observations::Union{G, AbstractVector{G}};
+                       C0 = nothing,               
+                    prior_distribution::Vector,
+                   support::Vector, error_support::Vector, error_prior::Vector) where {G<:TracerObservation}
     observations_vec = observations isa AbstractVector ? observations : [observations]
-
+    T = tracer_eltype(observations_vec[1])
+    τs = support 
+    nτ = length(τs)
+    # preflight
     any(obs -> obs.f_src === nothing, observations_vec) &&
         throw(ArgumentError("All observations_vec must have f_src defined for inversion."))
 
+    # create estimates from observations_vec
     estimates = [TracerEstimate(obs) for obs in observations_vec]
 
-    τs   = τ_max      isa AbstractVector ? τ_max      : fill(T(τ_max), length(observations_vec))
-    ints = integrator isa AbstractVector ? integrator : fill(integrator, length(observations_vec))
-    C0s  = C0         isa AbstractVector ? C0         : fill(T(C0), length(observations_vec))
+    # Handle C0: nothing -> zeros, scalar -> fill, vector -> use as-is
+    if C0 === nothing
+        C0s = zeros(T, length(observations_vec))
+    elseif C0 isa AbstractVector
+        C0s = C0
+    else
+        C0s = fill(T(C0), length(observations_vec))
+    end
 
-    function J(λ)
-        Γ = T(λ[1])
-        d = InverseGaussian(TracerInverseGaussian(Γ, Γ))
-        s = zero(T)
+    generate_MaxEntTTD(λ::AbstractVector) = MaxEntTTD(λ, 
+                                        observations_vec,
+                                        prior_distribution,
+                                        support;
+                                        weights = nothing,
+                                        cache_pdf = true,
+                                        debug_checks = false)
+
+    generate_MaxEntTTDErr(λ) = MaxEntTTDErr(λ, 
+                                        error_prior,
+                                        error_support;
+                                        weights = nothing,
+                                        cache_pdf = true,
+                                        debug_checks = false)
+
+    λ2i_map = LambdaIndexMap(observations_vec)
+    function r!(R, λ, p)
+        d = generate_MaxEntTTD(λ)
+        d_err = [generate_MaxEntTTDErr(λi).expected_error for λi in λ]
+
         @inbounds for k in eachindex(observations_vec)
-            obs = observations_vec[k]
-            ŷ = convolve(d, obs.f_src, obs.t_obs; τ_max=τs[k], integrator=ints[k], C0=C0s[k])
-            if obs.σ_obs === nothing
-                @inbounds for i in eachindex(obs.y_obs)
-                    r = obs.y_obs[i] - ŷ[i]
-                    s = muladd(r, r, s)
-                end
-            else
-                σ = obs.σ_obs
-                @inbounds for i in eachindex(obs.y_obs)
-                    r = (obs.y_obs[i] - ŷ[i]) / σ[i]
-                    s = muladd(r, r, s)
-                end
-            end
-        end
-        return s
-    end
-
-    if warmstart === :anneal
-        exp_map(z)     = exp.(z)
-        exp_map_inv(λ) = log.(max.(λ, 1e-12))
-        z0 = exp_map_inv(u0)
-        sa = Optim.optimize(z -> J(exp_map(z)), z0, SimulatedAnnealing(),
-                            Optim.Options(iterations=sa_iters))
-        λ_sa = exp_map(Optim.minimizer(sa))
-        if J(λ_sa) < J(u0)
-            u0 = [ _clamp_to_bounds(λ_sa[1], lower[1], upper[1]) ]
+            obs = observations_vec[k];
+            ŷ = convolve(d.probs, obs.f_src, obs.t_obs; τ_support = τs, C0=C0s[k])
+            obs_ranges = λ2i_map.ranges[k]
+            err_hat = d_err[obs_ranges]
+            R[obs_ranges] .= ((ŷ .+ err_hat) .- obs.y_obs)
         end
     end
 
-    optimizer_results = Optim.optimize(J, lower, upper, u0, Fminbox(LBFGS()),
-                             Optim.Options(iterations=lbfgs_iters))
-    Γ̂ = Optim.minimizer(optimizer_results)[1]
+    nobs = total_observations(observations_vec)
+	initial_λ = zeros(nobs)
 
-    d★ = InverseGaussian(TracerInverseGaussian(T(Γ̂), T(Γ̂)))
+    # Set up nonlinear problem
+    fn = NonlinearFunction(r!)  # Can use autodiff for Jacobian
+    initial_prob = NonlinearProblem(fn, initial_λ, nothing)
+    
+    # First optimization pass: Levenberg-Marquardt
+    lm_λ_result = solve(initial_prob, LevenbergMarquardt(); 
+                      maxiters=250, store_trace=Val(true))
+    
+    # Second optimization pass: Trust Region with refined initial guess
+    refined_prob = NonlinearProblem(fn, lm_λ_result[:], nothing)
+    tr_λ_result = solve(refined_prob, TrustRegion(); 
+                        maxiters=250, store_trace=Val(true))
+
+    # final yhat write-back
+    dhat = generate_MaxEntTTD(tr_λ_result[:])
     @inbounds for k in eachindex(observations_vec)
         obs = observations_vec[k]
-        yhat_k = convolve(d★, obs.f_src, obs.t_obs; τ_max=τs[k], integrator=ints[k], C0=C0s[k])
+        yhat_k = convolve(dhat.probs, obs.f_src, obs.t_obs; τ_support = τs, C0=C0s[k])
         update_estimate!(estimates[k], yhat_k)
     end
 
-    return optimizer_results, Γ̂, estimates
+    return InversionResult(
+        parameters = tr_λ_result[:], 
+        obs_estimates = estimates,
+        distribution = dhat.probs,
+        integrator = nothing,
+        support = support, 
+        method = :max_ent_w_err,
+        optimizer_output = [lm_λ_result, tr_λ_result]
+    )
 end
-
-# gaussian_ttd = InverseGaussian(TracerInverseGaussian(25, 25))
-# unit_source(x) = (x >= 0) ? 1.0 : 0.0
-# times = collect(1.:5:250.)
-# τm = 250_000.
-
-# break_points = [
-# 1.2 * (times[end] - times[1]),   # first break after twice the data span
-# 25_000.0               # second break at fixed value, ~ 1000 years
-# ]
-
-# nodes_points = [
-# 10.0  * break_points[1],                # dense in first panel
-# 0.03 * (break_points[2] - break_points[1]), # moderate in middle
-# 0.01 * (τm - break_points[2])               # lighter in last
-# ]
-
-# nodes_points = Int.(round.(nodes_points))
-# panels = make_integration_panels(0., τm, break_points, nodes_points)
-# gauss_integrator = make_integrator(:gausslegendre, panels)
-
-# ttd_results = convolve(gaussian_ttd, unit_source, times; τ_max=τm, integrator = gauss_integrator)
-
-# ttd_observations = TracerObservation(times, ttd_results; 
-#                                     σ_obs = 0.1 .+ zero(ttd_results), 
-#                                     f_src = unit_source)
-
-# optimizer_results, Γ̂, Δ̂, estimates = invert_ig(ttd_observations; τ_max = τm, integrator = gauss_integrator)
-
-# optimizer_results2, Γ̂2, estimates2 = invert_ig_equalvars(ttd_observations; τ_max = τm, integrator = gauss_integrator)
-
-# using BenchmarkTools
-# @btime invert_ig_equalvars(ttd_observations; τ_max = τm, integrator = gauss_integrator);
-# @btime invert_ig_equalvars([ttd_observations]; τ_max = τm, integrator = gauss_integrator);
-
-# @btime invert_ig([ttd_observations]; τ_max = τm, integrator = gauss_integrator);
-# @btime invert_ig(ttd_observations; τ_max = τm, integrator = gauss_integrator);

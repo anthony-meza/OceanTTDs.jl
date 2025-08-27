@@ -206,12 +206,17 @@ end
     
     # Test optimization with vector of observations
     # Inverse problem: Tracer values → TTD parameters
-    optimizer_results, Γ̂, Δ̂, estimates = invert_inverse_gaussian(
+    result = invert_inverse_gaussian(
         obs_vec; 
         τ_max = τm, 
         integrator = gauss_integrator,
         u0 = [50.0, 50.0]  # Start from different values to test optimization
     )
+    
+    # Extract values from InversionResult
+    Γ̂, Δ̂ = result.parameters
+    estimates = result.obs_estimates
+    optimizer_results = result.optimizer_output
     
     # Check parameter recovery accuracy
     @test !isnothing(optimizer_results)      # Optimizer should complete successfully
@@ -220,11 +225,14 @@ end
     
     # Test optimization with single observation instead of vector
     # This tests the convenience method for single tracer inversion
-    optimizer_results2, Γ̂2, Δ̂2, estimates2 = invert_inverse_gaussian(
+    result2 = invert_inverse_gaussian(
         ttd_observations; 
         τ_max = τm, 
         integrator = gauss_integrator
     )
+    Γ̂2, Δ̂2 = result2.parameters
+    estimates2 = result2.obs_estimates
+    optimizer_results2 = result2.optimizer_output
     
     # Verify both methods give consistent results
     @test isapprox(Γ̂, Γ_true, rtol=0.01)        # Parameters should match between methods
@@ -260,20 +268,26 @@ end
     
     # Test equal vars optimization with vector input
     # This uses the constraint that Γ = Δ (one parameter)
-    optimizer_results3, Γ̂3, estimates3 = invert_inverse_gaussian_equalvars(
+    result3 = invert_inverse_gaussian_equalvars(
         obs_vec; 
         τ_max = τm, 
         integrator = gauss_integrator,
         u0 = [50.0]  # Start from a different value to test optimization
     )
+    Γ̂3 = result3.parameters[1]
+    estimates3 = result3.obs_estimates
+    optimizer_results3 = result3.optimizer_output
     
     # Test optimization with single observation instead of vector
     # This tests the convenience method for single tracer inversion
-    optimizer_results4, Γ̂4, estimates4 = invert_inverse_gaussian_equalvars(
+    result4 = invert_inverse_gaussian_equalvars(
         ttd_observations; 
         τ_max = τm, 
         integrator = gauss_integrator
     )
+    Γ̂4 = result4.parameters[1]
+    estimates4 = result4.obs_estimates
+    optimizer_results4 = result4.optimizer_output
     
     @test isapprox(Γ̂4, Γ_true, rtol=0.01)        # Parameters should match between methods
     @test isapprox(Γ̂4, Δ_true, rtol=0.01)

@@ -1,5 +1,5 @@
 
-export invert_inverse_gaussian, invert_inverse_gaussian_equalvars
+export invert_inverse_gaussian, invert_inverse_gaussian_equalvars, tracer_eltype, total_observations
 #############################
 # Inversion: free (Γ, Δ)
 #############################
@@ -9,6 +9,23 @@ export invert_inverse_gaussian, invert_inverse_gaussian_equalvars
     isfinite(hi) && x > hi && return hi - eps(hi)
     return x
 end
+
+"""
+    tracer_eltype(obs::TracerObservation)
+
+Returns the element type of the tracer observation data.
+"""
+tracer_eltype(obs::TracerObservation) = eltype(obs.y_obs)
+
+"""
+    total_observations(obs::TracerObservation)
+    total_observations(obs_vec::AbstractVector{<:TracerObservation})
+
+Returns the total number of observations in a single TracerObservation or 
+the sum of observations across a vector of TracerObservation objects.
+"""
+total_observations(obs::TracerObservation) = obs.nobs
+total_observations(obs_vec::AbstractVector{<:TracerObservation}) = sum(obs -> obs.nobs, obs_vec)
 
 """
     invert_ig(observations; τ_max, integrator, C0=0,
@@ -24,15 +41,16 @@ Returns: `optimizer_results, Γ̂, Δ̂, estimates::Vector{TracerEstimate}`.
 function invert_inverse_gaussian(observations::Union{G, AbstractVector{G}};
                    τ_max,
                    integrator,
-                   C0::T = zero(T),
-                   u0::Vector{T} = [1e3, 1e2],
-                   lower::Vector{T} = [1.0, 12.0],
-                   upper::Vector{T} = [Inf,  Inf],
+                   C0 = nothing,
+                   u0 = [1e3, 1e2],
+                   lower = [1.0, 12.0],
+                   upper = [Inf, Inf],
                    warmstart::Symbol = :anneal,
                    sa_iters::Int = 50,
-                   lbfgs_iters::Int = 200) where {T<:Real, G<:TracerObservation{T}}
+                   lbfgs_iters::Int = 200) where {G<:TracerObservation}
     
     observations_vec = observations isa AbstractVector ? observations : [observations]
+    T = tracer_eltype(observations_vec[1])
 
     # preflight
     any(obs -> obs.f_src === nothing, observations_vec) &&
@@ -44,7 +62,15 @@ function invert_inverse_gaussian(observations::Union{G, AbstractVector{G}};
     # broadcastables
     τs   = τ_max      isa AbstractVector ? τ_max      : fill(T(τ_max), length(observations_vec))
     ints = integrator isa AbstractVector ? integrator : fill(integrator, length(observations_vec))
-    C0s  = C0         isa AbstractVector ? C0         : fill(T(C0), length(observations_vec))
+    
+    # Handle C0: nothing -> zeros, scalar -> fill, vector -> use as-is
+    if C0 === nothing
+        C0s = zeros(T, length(observations_vec))
+    elseif C0 isa AbstractVector
+        C0s = C0
+    else
+        C0s = fill(T(C0), length(observations_vec))
+    end
 
     # objective: weighted SSE, compute yhats inline
     function J(λ)
@@ -97,7 +123,14 @@ function invert_inverse_gaussian(observations::Union{G, AbstractVector{G}};
         update_estimate!(estimates[k], yhat_k)
     end
 
-    return optimizer_results, Γ̂, Δ̂, estimates, d_template
+    return InversionResult(
+        parameters = [Γ̂, Δ̂],
+        obs_estimates = estimates,
+        distribution = d_template,
+        integrator = integrator,
+        method = :inverse_gaussian,
+        optimizer_output = optimizer_results
+    )
 end
 
 #############################
@@ -116,15 +149,16 @@ Returns: `optimizer_results, Γ̂, estimates::Vector{TracerEstimate}`.
 function invert_inverse_gaussian_equalvars(observations::Union{G, AbstractVector{G}};
                              τ_max,
                              integrator,
-                             C0 = zero(T),
+                             C0 = zero(τ_max),
                              u0 = [1e3],
                              lower = [1.0],
                              upper = [Inf],
                              warmstart::Symbol = :anneal,
                              sa_iters::Int = 50,
-                             lbfgs_iters::Int = 200) where {T<:Real, G<:TracerObservation{T}}
+                             lbfgs_iters::Int = 200) where {G<:TracerObservation}
 
     observations_vec = observations isa AbstractVector ? observations : [observations]
+    T = tracer_eltype(observations_vec[1])
 
     any(obs -> obs.f_src === nothing, observations_vec) &&
         throw(ArgumentError("All observations_vec must have f_src defined for inversion."))
@@ -183,7 +217,14 @@ function invert_inverse_gaussian_equalvars(observations::Union{G, AbstractVector
         update_estimate!(estimates[k], yhat_k)
     end
 
-    return optimizer_results, Γ̂, estimates, d_template
+    return InversionResult(
+        parameters = [Γ̂],
+        obs_estimates = estimates,
+        distribution = d_template,
+        integrator = integrator,
+        method = :inverse_gaussian_equalvars,
+        optimizer_output = optimizer_results
+    )
 end
 
 # gaussian_ttd = InverseGaussian(TracerInverseGaussian(25, 25))
