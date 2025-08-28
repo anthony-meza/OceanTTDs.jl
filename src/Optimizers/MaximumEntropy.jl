@@ -1,31 +1,84 @@
-export max_ent_inversion, gen_max_ent_inversion
-#############################
-# Inversion: free (Γ, Δ)
-#############################
+"""
+Maximum Entropy Method (MEM) for Transit Time Distribution inversion.
 
+The Maximum Entropy Method finds the TTD that maximizes entropy while fitting 
+observations, providing the "least biased" solution consistent with the data.
+This avoids over-interpretation when data constraints are limited.
+"""
+
+export max_ent_inversion, gen_max_ent_inversion
+"""
+    max_ent_inversion(observations; C0=nothing, prior_distribution, support)
+
+Maximum Entropy inversion for discrete Transit Time Distributions.
+
+## Mathematical Formulation
+
+The Maximum Entropy Method solves the constrained optimization problem:
+
+```
+max S[p] = -Σᵢ pᵢ ln(pᵢ/mᵢ)    (maximize entropy)
+subject to: Σᵢ pᵢ = 1           (normalization)
+           ||Gp - d||² = χ²     (fit observations)
+```
+
+where:
+- `p = [p₁, p₂, ..., pₙ]` is the discrete TTD probability vector
+- `m = [m₁, m₂, ..., mₙ]` is the prior distribution  
+- `G` is the forward operator (convolution matrix)
+- `d` is the observation vector
+- `χ²` is the target misfit level
+
+This is solved via Lagrange multipliers, yielding:
+
+```
+pᵢ = mᵢ exp(-Σⱼ λⱼ Gⱼᵢ) / Z(λ)
+```
+
+where λ = [λ₁, λ₂, ..., λₘ] are Lagrange multipliers found by solving the nonlinear system:
+
+```
+∂S/∂λⱼ = Σᵢ Gⱼᵢ pᵢ(λ) - dⱼ = 0    for j = 1, ..., m
+```
+
+## Algorithm
+1. **Setup**: Initialize λ = 0 (uniform distribution)
+2. **Levenberg-Marquardt**: First-pass nonlinear solver with analytic Jacobian
+3. **Trust Region**: Second-pass refinement for improved convergence
+4. **Distribution**: Compute final p(λ) and fitted observations
+
+The analytic Jacobian is:
+```
+Jⱼₖ = ∂rⱼ/∂λₖ = Ĉₖ Aⱼ - Bⱼₖ
+```
+
+where Ĉₖ, Aⱼ, Bⱼₖ involve convolution integrals with the current distribution p(λ).
+
+## Arguments  
+- `observations`: TracerObservation(s) with times, data, source functions
+- `prior_distribution`: Prior probability vector m on support points
+- `support`: Discrete transit time support points τ = [τ₁, τ₂, ..., τₙ]
+- `C0`: Additive offset parameter (nothing→0, scalar, or vector)
+
+## Returns
+InversionResult with λ parameters, discrete TTD probabilities, and solver output.
+
+## Example
+```julia
+τ_support = collect(0.0:100.0:10000.0)
+m_prior = ones(length(τ_support)) / length(τ_support)  # uniform prior
+result = max_ent_inversion(obs; prior_distribution=m_prior, support=τ_support)
+ttd_probs = result.distribution
+```
+"""
 function max_ent_inversion(observations::Union{G, AbstractVector{G}};
                        C0 = nothing,               
                     prior_distribution::Vector,
                    support::Vector) where {G<:TracerObservation}
-    observations_vec = observations isa AbstractVector ? observations : [observations]
+    observations_vec, estimates = prepare_observations(observations)
     T = tracer_eltype(observations_vec[1])
     τs = support 
-    nτ = length(τs)
-    # preflight
-    any(obs -> obs.f_src === nothing, observations_vec) &&
-        throw(ArgumentError("All observations_vec must have f_src defined for inversion."))
-
-    # create estimates from observations_vec
-    estimates = [TracerEstimate(obs) for obs in observations_vec]
-
-    # Handle C0: nothing -> zeros, scalar -> fill, vector -> use as-is
-    if C0 === nothing
-        C0s = zeros(T, length(observations_vec))
-    elseif C0 isa AbstractVector
-        C0s = C0
-    else
-        C0s = fill(T(C0), length(observations_vec))
-    end
+    C0s = handle_C0_parameter(C0, observations_vec)
 
     generate_MaxEntTTD(λ::AbstractVector) = MaxEntTTD(λ, 
                                         observations_vec,
@@ -129,25 +182,10 @@ function gen_max_ent_inversion(observations::Union{G, AbstractVector{G}};
                        C0 = nothing,               
                     prior_distribution::Vector,
                    support::Vector, error_support::Vector, error_prior::Vector) where {G<:TracerObservation}
-    observations_vec = observations isa AbstractVector ? observations : [observations]
+    observations_vec, estimates = prepare_observations(observations)
     T = tracer_eltype(observations_vec[1])
     τs = support 
-    nτ = length(τs)
-    # preflight
-    any(obs -> obs.f_src === nothing, observations_vec) &&
-        throw(ArgumentError("All observations_vec must have f_src defined for inversion."))
-
-    # create estimates from observations_vec
-    estimates = [TracerEstimate(obs) for obs in observations_vec]
-
-    # Handle C0: nothing -> zeros, scalar -> fill, vector -> use as-is
-    if C0 === nothing
-        C0s = zeros(T, length(observations_vec))
-    elseif C0 isa AbstractVector
-        C0s = C0
-    else
-        C0s = fill(T(C0), length(observations_vec))
-    end
+    C0s = handle_C0_parameter(C0, observations_vec)
 
     generate_MaxEntTTD(λ::AbstractVector) = MaxEntTTD(λ, 
                                         observations_vec,

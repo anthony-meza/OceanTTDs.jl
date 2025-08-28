@@ -7,8 +7,7 @@ import Distributions: mean, median, quantile, std, var, cov, cor, shape, params,
 # import DimensionalData: dims
 # import LinearAlgebra: eigen
 
-export TracerInverseGaussian
-export width
+export TracerInverseGaussian, width
 export # re-export from Distributions
     mean, median, quantile, std, var, cov, cor, shape, params
 export # re-export from Distributions
@@ -17,7 +16,6 @@ export # re-export from Distributions
     
 """
     TracerInverseGaussian(Γ,Δ)
-using LinearAlgebra: NumberArray
 
 The *tracer inverse Gaussian distribution* with mean `Γ` and width `Δ` has probability density function
 
@@ -69,11 +67,21 @@ Base.convert(::Type{TracerInverseGaussian{T}}, d::TracerInverseGaussian{T}) wher
 #### Parameters
 
 shape(d::TracerInverseGaussian) = d.Γ^3/(2*d.Δ^2) 
+"""
+    width(d::TracerInverseGaussian)
+
+Return the width parameter Δ of the TracerInverseGaussian distribution.
+"""
 width(d::TracerInverseGaussian) = d.Δ
 params(d::TracerInverseGaussian) = (d.Γ, d.Δ)
 partype(::TracerInverseGaussian{T}) where {T} = T
 
-# constructor for original Inverse Gaussian
+"""
+    InverseGaussian(d::TracerInverseGaussian)
+
+Convert a TracerInverseGaussian to a standard InverseGaussian distribution.
+Uses the relationship: InverseGaussian(μ, λ) where μ = Γ and λ = Γ³/(2Δ²).
+"""
 InverseGaussian(d::TracerInverseGaussian) = InverseGaussian(d.Γ, shape(d))
 
 # #### Statistics

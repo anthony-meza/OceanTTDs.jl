@@ -5,25 +5,10 @@ function invert_tcm(observations::Union{G, AbstractVector{G}};
                    PΣ ::Matrix,
                    support::Vector) where {G<:TracerObservation}
     
-    observations_vec = observations isa AbstractVector ? observations : [observations]
+    observations_vec, estimates = prepare_observations(observations)
     T = tracer_eltype(observations_vec[1])
     τs = support 
-    nτ = length(τs)
-    # preflight
-    any(obs -> obs.f_src === nothing, observations_vec) &&
-        throw(ArgumentError("All observations_vec must have f_src defined for inversion."))
-
-    # create estimates from observations_vec
-    estimates = [TracerEstimate(obs) for obs in observations_vec]
-
-    # Handle C0: nothing -> zeros, scalar -> fill, vector -> use as-is
-    if C0 === nothing
-        C0s = zeros(T, length(observations_vec))
-    elseif C0 isa AbstractVector
-        C0s = C0
-    else
-        C0s = fill(T(C0), length(observations_vec))
-    end
+    C0s = handle_C0_parameter(C0, observations_vec)
 
     function J(d::Vector{A}, d_prior::Vector{B}, 
                             PΣ::Matrix{B}, 

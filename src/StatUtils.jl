@@ -1,14 +1,39 @@
-module stat_utils
+module StatUtils
     using Statistics, LinearAlgebra, Distributions
     using CovarianceEstimation, Random
     
-    export BootstrapShrinkageCovariance, pmf_from
+    export BootstrapShrinkageCovariance, discretize_pdf
 
     function is_natural_number(n)
         return isa(n, Integer) && n >= 0
     end
 
-    function pmf_from(dist::UnivariateDistribution, support::AbstractVector, weights = nothing)
+    """
+        discretize_pdf(dist::UnivariateDistribution, support::AbstractVector, weights=nothing)
+
+    Convert a continuous probability distribution to a discrete PMF evaluated at support points.
+
+    This function evaluates the PDF of a continuous distribution at discrete support points,
+    applies optional quadrature weights for numerical integration, and normalizes to create
+    a proper probability mass function. Uses log-space operations for numerical stability.
+
+    # Arguments
+    - `dist::UnivariateDistribution`: Continuous distribution to discretize
+    - `support::AbstractVector`: Points where to evaluate the discrete PMF
+    - `weights=nothing`: Optional quadrature weights for numerical integration
+
+    # Returns
+    - Vector of probabilities summing to 1, representing the discrete PMF
+
+    # Example
+    ```julia
+    using Distributions
+    dist = Normal(0, 1)
+    support = -3:0.1:3
+    pmf = discretize_pdf(dist, support)
+    ```
+    """
+    function discretize_pdf(dist::UnivariateDistribution, support::AbstractVector, weights = nothing)
         ℓ = logpdf.(dist, support)        # log-pdf values
 
         # Apply weights if provided
@@ -54,4 +79,4 @@ module stat_utils
         return Σ, pinv(Σ)
     end
 
-end # module stat_utils
+end # module StatUtils

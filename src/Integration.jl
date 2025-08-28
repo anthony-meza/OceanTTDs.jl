@@ -1,8 +1,4 @@
-# using Interpolations
 using FastGaussQuadrature
-# using LinearAlgebra
-# using BenchmarkTools
-# using QuadGK
 
 export make_integrator, make_integration_panels
 
@@ -25,7 +21,6 @@ function make_integrator(type::Symbol, panels::Vector{<:Tuple{T,T,<:Integer}}) w
         error("Unsupported integrator type: $type")
     end
 end
-
 
 function make_integrator(type::Symbol, N::Integer, a::Real, b::Real)
     @assert type in [:trapezoid, :gausslegendre] "Unknown integrator type"
@@ -161,15 +156,14 @@ function make_uniform_integrator(
     UniformIntegrator{T}(nodes, weights)
 end
 
-
 """
-    make_panels(a, b, internal_breaks, Ns) -> Vector{Tuple{T,T,Int}}
+    make_integration_panels(a, b, internal_breaks, Ns) -> Vector{Tuple{T,T,Int}}
 
-Create a vector of Gauss–Legendre panels `(a, b, N)`.
+Create a vector of integration panels `(a, b, N)` for piecewise quadrature.
 
 Arguments:
 - `a`: start of the full integration domain
-- `b`: end of the full integration domain
+- `b`: end of the full integration domain  
 - `internal_breaks`: vector of strictly increasing breakpoints inside (a,b)
 - `Ns`: vector of integers, one per panel (length = number of intervals)
 
@@ -180,10 +174,11 @@ as `[a; internal_breaks; b]` and returns one `(aᵢ, bᵢ, Nᵢ)` tuple per pane
 ```julia
 # Integrate over [0, 1], refine between 0.29 and 0.37
 a, b = 0.0, 1.0
-internal_breaks = [0.29, 0.37]
+internal_breaks = [0.29, 0.37]  
 Ns = [16, 128, 16]
-panels = make_panels(a, b, internal_breaks, Ns)
+panels = make_integration_panels(a, b, internal_breaks, Ns)
 # panels == [(0.0, 0.29, 16), (0.29, 0.37, 128), (0.37, 1.0, 16)]
+```
 """
 function make_integration_panels(a::T, b::T, internal_breaks::Vector{T}, Ns::AbstractVector{Int}) where {T<:Real}
     @assert a < b "Start point must be less than end point"
@@ -193,5 +188,3 @@ function make_integration_panels(a::T, b::T, internal_breaks::Vector{T}, Ns::Abs
     @assert length(Ns) == length(breaks) - 1 "Ns length must equal number of panels"
     [(breaks[i], breaks[i+1], Ns[i]) for i in 1:length(Ns)]
 end
-
-

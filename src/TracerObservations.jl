@@ -5,6 +5,23 @@ module TracerObservations
     # Lightweight data structs
     #############################
 
+    """
+        TracerObservation{T,F<:Function}
+
+    Container for tracer observation data including measurement values, uncertainties, and source functions.
+
+    # Fields
+    - `t_obs::Vector{T}`: Time points of observations
+    - `y_obs::Vector{T}`: Observed tracer concentrations
+    - `σ_obs::Union{Nothing,Vector{T}}`: Measurement uncertainties (optional)
+    - `f_src::Union{Nothing,F}`: Source function for boundary conditions (required for inversion)
+    - `nobs::Int`: Number of observations
+
+    # Constructor
+    ```julia
+    TracerObservation(t_obs, y_obs; σ_obs=nothing, f_src=nothing)
+    ```
+    """
     struct TracerObservation{T,F<:Function}
         t_obs :: Vector{T}
         y_obs :: Vector{T}
@@ -21,6 +38,24 @@ module TracerObservations
         TracerObservation{T,F}(t_obs, y_obs, σ_obs, f_src, length(t_obs))
     end
 
+    """
+        TracerEstimate{T}
+
+    Mutable container for tracer model estimates and predictions.
+
+    # Fields
+    - `t_obs::Vector{T}`: Time points (copied from observations)
+    - `y_obs::Vector{T}`: Original observed values (copied from observations)
+    - `σ_obs::Union{Nothing,Vector{T}}`: Observation uncertainties (copied from observations)
+    - `yhat::Vector{T}`: Model predictions
+    - `σhat::Vector{T}`: Model prediction uncertainties
+    - `nobs::Int`: Number of observations
+
+    # Constructor
+    ```julia
+    TracerEstimate(obs::TracerObservation; init_yhat=:zeros, init_σhat=:zeros)
+    ```
+    """
     mutable struct TracerEstimate{T}
         t_obs :: Vector{T}
         y_obs :: Vector{T}
@@ -42,5 +77,17 @@ module TracerObservations
         TracerEstimate{T}(obs.t_obs, obs.y_obs, obs.σ_obs, yhat, σhat, n)
     end
 
+    """
+        update_estimate!(estimate::TracerEstimate, yhat::AbstractVector)
+
+    Update the model predictions in a TracerEstimate object.
+
+    # Arguments
+    - `estimate::TracerEstimate`: The estimate object to update
+    - `yhat::AbstractVector`: New predicted values (must match observation length)
+
+    # Returns
+    - Modified `TracerEstimate` object
+    """
     update_estimate!(e::TracerEstimate, yhat::AbstractVector) = (length(yhat)==e.nobs || throw(ArgumentError("len mismatch")); e.yhat .= yhat; e)
 end

@@ -7,7 +7,7 @@ module Optimizers
     import Distributions: convolve   # avoid importing `support` to prevent name clashes
     # include("../TracerObservations.jl")
     using JuMP, Ipopt
-    using ..stat_utils
+    using ..StatUtils
     using LinearAlgebra
     using ..TracerObservations
     using ..TTDs

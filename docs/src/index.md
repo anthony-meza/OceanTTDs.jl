@@ -1,14 +1,14 @@
 ```@meta
-CurrentModule = TCMGreensFunctions
+CurrentModule = OceanTTDs
 ```
 
-# TCMGreensFunctions
+# OceanTTDs
 
-Documentation for [TCMGreensFunctions](https://github.com/anthony-meza/TCMGreensFunctions.jl).
+Documentation for [OceanTTDs](https://github.com/anthony-meza/TCMGreensFunctions.jl).
 
 ```@index
 ```
 
 ```@autodocs
-Modules = [TCMGreensFunctions]
+Modules = [OceanTTDs]
 ```
