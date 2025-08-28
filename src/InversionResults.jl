@@ -15,7 +15,7 @@ and integration contexts.
 - `parameters::AbstractVector`: Estimated parameters. Interpretation depends on method:
   - `:inverse_gaussian`: [Γ, Δ] 
   - `:inverse_gaussian_equalvars`: [Γ]
-  - `:max_entropy`: [λ₁, λ₂, ..., λₙ] (Lagrange multipliers)
+  - `:max_entropy`: [λ₁, λ₂, ..., λₙ] (One lagrange multiplier per observation)
 - `obs_estimates::Vector{TracerEstimate{T}}`: Updated TracerEstimate objects with predictions
 - `distribution::Union{Distribution, AbstractVector{<:Distribution}, Function, Nothing}`: Fitted distribution(s) or template function
 - `integrator::Union{Nothing, Any}`: Integration method/context used
