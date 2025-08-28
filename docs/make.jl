@@ -1,12 +1,12 @@
-using TCMGreensFunctions
+using OceanTTDs
 using Documenter
 
-DocMeta.setdocmeta!(TCMGreensFunctions, :DocTestSetup, :(using TCMGreensFunctions); recursive=true)
+DocMeta.setdocmeta!(OceanTTDs, :DocTestSetup, :(using OceanTTDs); recursive=true)
 
 makedocs(;
-    modules=[TCMGreensFunctions],
+    modules=[OceanTTDs],
     authors="A Meza",
-    sitename="TCMGreensFunctions.jl",
+    sitename="OceanTTDs.jl",
     format=Documenter.HTML(;
         canonical="https://anthony-meza.github.io/TCMGreensFunctions.jl",
         edit_link="main",
