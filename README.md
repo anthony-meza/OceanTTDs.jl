@@ -7,7 +7,7 @@
 
 **A Julia package for Transit Time Distribution (TTD) modeling and tracer inversion in oceanography**
 
-OceanTTDs.jl is a toolkit for inferring Transit Time Distributions (TTDs) from ocean tracer data. The package implements multiple optimization methods including Time-Corrected Method (TCM), Maximum Entropy (MaxEnt), and Inverse Gaussian fitting for estimating TTDs.
+OceanTTDs.jl is a toolkit for inferring Transit Time Distributions (TTDs) from ocean tracer data. The package implements multiple optimization methods to infer TTDs using the Time-Corrected Method (TCM), Maximum Entropy (MaxEnt)/Generalized Maximum Entropy (GenMaxEnt), and Inverse Gaussian fitting.
 
 ## Installation
 
