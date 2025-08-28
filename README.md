@@ -64,7 +64,7 @@ println("Fitted parameters: Γ=$Γ_fit, Δ=$Δ_fit")
 See the `examples/` directory for detailed usage examples including:
 - Comparison of different inversion methods
 - Handling of measurement uncertainties
-- 
+
 ## Contributing
 
 Contributions are welcome!
