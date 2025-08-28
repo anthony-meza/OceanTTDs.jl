@@ -10,7 +10,7 @@ export max_ent_inversion, gen_max_ent_inversion
 """
     max_ent_inversion(observations; C0=nothing, prior_distribution, support)
 
-Maximum Entropy inversion for discrete Transit Time Distributions.
+Maximum Entropy inversion for estimate discrete Transit Time Distributions.
 
 ## Mathematical Formulation
 
@@ -19,7 +19,7 @@ The Maximum Entropy Method solves the constrained optimization problem:
 ```
 max S[p] = -Σᵢ pᵢ ln(pᵢ/mᵢ)    (maximize entropy)
 subject to: Σᵢ pᵢ = 1           (normalization)
-           ||Gp - d||² = χ²     (fit observations)
+            Gp - d = 0.0     (fit observations)
 ```
 
 where:
@@ -27,7 +27,6 @@ where:
 - `m = [m₁, m₂, ..., mₙ]` is the prior distribution  
 - `G` is the forward operator (convolution matrix)
 - `d` is the observation vector
-- `χ²` is the target misfit level
 
 This is solved via Lagrange multipliers, yielding:
 
@@ -42,17 +41,11 @@ where λ = [λ₁, λ₂, ..., λₘ] are Lagrange multipliers found by solving 
 ```
 
 ## Algorithm
-1. **Setup**: Initialize λ = 0 (uniform distribution)
+1. **Setup**: Initialize λ = 0 (default to prior distribution)
 2. **Levenberg-Marquardt**: First-pass nonlinear solver with analytic Jacobian
 3. **Trust Region**: Second-pass refinement for improved convergence
-4. **Distribution**: Compute final p(λ) and fitted observations
+4. **Distribution**: Compute final p(λ) and estimated observations
 
-The analytic Jacobian is:
-```
-Jⱼₖ = ∂rⱼ/∂λₖ = Ĉₖ Aⱼ - Bⱼₖ
-```
-
-where Ĉₖ, Aⱼ, Bⱼₖ involve convolution integrals with the current distribution p(λ).
 
 ## Arguments  
 - `observations`: TracerObservation(s) with times, data, source functions
