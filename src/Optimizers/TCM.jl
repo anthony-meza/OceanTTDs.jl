@@ -8,6 +8,7 @@ function invert_tcm(observations::Union{G, AbstractVector{G}};
     observations_vec, estimates = prepare_observations(observations)
     T = tracer_eltype(observations_vec[1])
     τs = support 
+    nτ = length(support)
     C0s = handle_C0_parameter(C0, observations_vec)
 
     function J(d::Vector{A}, d_prior::Vector{B}, 

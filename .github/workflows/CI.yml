@@ -77,6 +77,6 @@ jobs:
         shell: julia --project=docs --color=yes {0}
         run: |
           using Documenter: DocMeta, doctest
-          using TCMGreensFunctions
-          DocMeta.setdocmeta!(TCMGreensFunctions, :DocTestSetup, :(using TCMGreensFunctions); recursive=true)
-          doctest(TCMGreensFunctions)
+          using OceanTTDs
+          DocMeta.setdocmeta!(OceanTTDs, :DocTestSetup, :(using OceanTTDs); recursive=true)
+          doctest(OceanTTDs)

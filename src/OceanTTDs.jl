@@ -1,11 +1,8 @@
 module OceanTTDs
     using LinearAlgebra
-    using Interpolations
+    using Distributions
     using FastGaussQuadrature
-    using Distributions  # InverseGaussian
-    using BlackBoxOptim
     using Reexport
-    using RunningStats
     import Distributions: convolve   # avoid importing `support` to prevent name clashes
 
     # Core data structures

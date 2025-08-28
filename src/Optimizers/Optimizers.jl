@@ -13,6 +13,7 @@ module Optimizers
     using ..TTDs
     using ..InversionResults
 
+    include("OptimizerUtils.jl")
     include("InverseGaussian.jl")
     include("MaximumEntropy.jl")
     include("TCM.jl")
