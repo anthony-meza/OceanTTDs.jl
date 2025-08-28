@@ -7,30 +7,9 @@
 
 **A Julia package for Transit Time Distribution (TTD) modeling and tracer inversion in oceanography**
 
-OceanTTDs.jl provides a comprehensive toolkit for analyzing ocean tracer distributions using Transit Time Distributions (TTDs). The package implements multiple optimization methods including Time-Corrected Method (TCM), Maximum Entropy (MaxEnt), and Inverse Gaussian fitting for estimating water mass age distributions from tracer observations.
-
-## Features
-
-- **Transit Time Distributions**: Inverse Gaussian TTD modeling with flexible parameterization
-- **Multiple Inversion Methods**:
-  - Inverse Gaussian parameter fitting
-  - Time-Corrected Method (TCM) with covariance regularization
-  - Maximum Entropy inversion
-  - Generalized Maximum Entropy with error modeling
-- **Numerical Integration**: Adaptive quadrature methods optimized for convolution operations
-- **Boundary Propagators**: Tools for modeling tracer boundary conditions and convolutions
-- **Statistical Utilities**: Covariance estimation and regularization methods
+OceanTTDs.jl is a toolkit for inferring Transit Time Distributions (TTDs) from ocean tracer data. The package implements multiple optimization methods including Time-Corrected Method (TCM), Maximum Entropy (MaxEnt), and Inverse Gaussian fitting for estimating TTDs.
 
 ## Installation
-
-Install OceanTTDs.jl from the Julia package registry:
-
-```julia
-using Pkg
-Pkg.add("OceanTTDs")
-```
-
-Or install the development version:
 
 ```julia
 using Pkg
@@ -74,50 +53,18 @@ println("Fitted parameters: Γ=$Γ_fit, Δ=$Δ_fit")
 
 ## Main Components
 
-### Transit Time Distributions (`TTDs`)
-- `TracerInverseGaussian`: Parameterized inverse Gaussian TTD
-- `InverseGaussian`: Wrapper for integration with Distributions.jl
-
 ### Optimization Methods (`Optimizers`)
 - `invert_inverse_gaussian`: Least squares fitting of inverse Gaussian parameters
-- `invert_tcm`: Time-Corrected Method with prior covariance
+- `invert_tcm`: Time-Corrected Method with prior covariance 
 - `max_ent_inversion`: Maximum entropy TTD estimation
 - `gen_max_ent_inversion`: Generalized maximum entropy with error modeling
-
-### Data Structures
-- `TracerObservation`: Container for tracer measurements with uncertainties
-- `TracerEstimate`: Results container for model predictions
-- `InversionResult`: Complete inversion results with parameters and diagnostics
-
-### Numerical Tools
-- `make_integrator`: Adaptive quadrature setup for convolution integrals
-- `convolve`: TTD convolution with boundary conditions
-- `BootstrapShrinkageCovariance`: Statistical covariance estimation
-
+- 
 ## Examples
 
 See the `examples/` directory for detailed usage examples including:
 - Comparison of different inversion methods
 - Handling of measurement uncertainties
-- Advanced integration configurations
-
-## Scientific Background
-
-This package implements methods for analyzing oceanic tracer distributions using the Transit Time Distribution framework. TTDs describe the probability distribution of water parcel ages, providing insights into ocean circulation timescales and mixing processes.
-
+- 
 ## Contributing
 
-Contributions are welcome! Please see the documentation for details on development setup and contribution guidelines.
-
-## Citation
-
-If you use this package in your research, please cite:
-
-```
-@software{OceanTTDs,
-  author = {A. Meza},
-  title = {OceanTTDs.jl: Transit Time Distribution modeling for oceanography},
-  url = {https://github.com/anthony-meza/OceanTTDs.jl},
-  version = {1.0.0-DEV},
-}
-```
+Contributions are welcome!
