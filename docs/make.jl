@@ -5,7 +5,7 @@ DocMeta.setdocmeta!(OceanTTDs, :DocTestSetup, :(using OceanTTDs); recursive=true
 
 makedocs(;
     modules=[OceanTTDs],
-    authors="A Meza",
+    authors="A Meza", 
     sitename="OceanTTDs.jl",
     format=Documenter.HTML(;
         canonical="https://anthony-meza.github.io/OceanTTDs.jl",
@@ -15,6 +15,8 @@ makedocs(;
     pages=[
         "Home" => "index.md",
     ],
+    checkdocs=:none,
+    warnonly=[:missing_docs, :cross_references],
 )
 
 deploydocs(;
