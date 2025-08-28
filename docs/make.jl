@@ -8,7 +8,7 @@ makedocs(;
     authors="A Meza",
     sitename="OceanTTDs.jl",
     format=Documenter.HTML(;
-        canonical="https://anthony-meza.github.io/TCMGreensFunctions.jl",
+        canonical="https://anthony-meza.github.io/OceanTTDs.jl",
         edit_link="main",
         assets=String[],
     ),
@@ -18,6 +18,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/anthony-meza/TCMGreensFunctions.jl",
+    repo="github.com/anthony-meza/OceanTTDs.jl",
     devbranch="main",
 )

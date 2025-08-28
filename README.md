@@ -1,9 +1,9 @@
 # OceanTTDs.jl
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://anthony-meza.github.io/TCMGreensFunctions.jl/stable/)
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://anthony-meza.github.io/TCMGreensFunctions.jl/dev/)
-[![Build Status](https://github.com/anthony-meza/TCMGreensFunctions.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/anthony-meza/TCMGreensFunctions.jl/actions/workflows/CI.yml?query=branch%3Amain)
-[![Coverage](https://codecov.io/gh/anthony-meza/TCMGreensFunctions.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/anthony-meza/TCMGreensFunctions.jl)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://anthony-meza.github.io/OceanTTDs.jl/stable/)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://anthony-meza.github.io/OceanTTDs.jl/dev/)
+[![Build Status](https://github.com/anthony-meza/OceanTTDs.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/anthony-meza/OceanTTDs.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/anthony-meza/OceanTTDs.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/anthony-meza/OceanTTDs.jl)
 
 **A Julia package for Transit Time Distribution (TTD) modeling and tracer inversion in oceanography**
 
@@ -34,7 +34,7 @@ Or install the development version:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/anthony-meza/TCMGreensFunctions.jl")
+Pkg.add(url="https://github.com/anthony-meza/OceanTTDs.jl")
 ```
 
 ## Quick Start
@@ -117,7 +117,7 @@ If you use this package in your research, please cite:
 @software{OceanTTDs,
   author = {A. Meza},
   title = {OceanTTDs.jl: Transit Time Distribution modeling for oceanography},
-  url = {https://github.com/anthony-meza/TCMGreensFunctions.jl},
+  url = {https://github.com/anthony-meza/OceanTTDs.jl},
   version = {1.0.0-DEV},
 }
 ```
